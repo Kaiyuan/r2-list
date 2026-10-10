@@ -2,6 +2,8 @@
 
 R2 List 是一个基于 Tauri、Rust、React 和 TypeScript 的桌面文件工作区，用目录相对路径生成 Cloudflare R2 对象 URL，并支持复制 URL、Markdown 和 HTML 链接。
 
+界面支持 English、Français、简体中文、繁體中文、日本語和 한국어；外观可跟随系统设置，或手动选择亮色/暗色。
+
 ## 开发环境
 
 - Node.js 20.19+ 或 22.12+

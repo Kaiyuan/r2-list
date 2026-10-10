@@ -1,0 +1,74 @@
+:root:not([data-theme="dark"]) {
+  color-scheme: light;
+}
+
+.topbar-actions > .preference-select {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  transition: border-color .15s, color .15s;
+}
+
+.topbar-actions > .preference-select:focus-within {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.preference-select select {
+  min-width: 0;
+  padding: 0;
+  appearance: none;
+  border: 0;
+  outline: 0;
+  color: var(--ink-soft);
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.preference-select option {
+  color: var(--ink);
+  background: var(--panel);
+}
+
+.topbar-actions > .preference-select:first-of-type select {
+  width: 78px;
+}
+
+.topbar-actions > .theme-select select {
+  width: 118px;
+}
+
+@media (max-width: 760px) {
+  .topbar-actions {
+    flex-shrink: 0;
+    gap: 4px;
+  }
+
+  .topbar-actions > .connection-state {
+    display: none;
+  }
+
+  .topbar-actions > .preference-select {
+    gap: 4px;
+    padding-inline: 5px;
+  }
+
+  .topbar-actions > .preference-select:first-of-type select {
+    width: 72px;
+  }
+
+  .topbar-actions > .theme-select select {
+    width: 104px;
+  }
+
+  .topbar-actions > .preference-select > svg:last-child {
+    display: none;
+  }
+}

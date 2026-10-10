@@ -2,10 +2,13 @@ import { useEffect, useState, type CSSProperties, type FormEvent, type MouseEven
 import {
   Archive, ArrowDownToLine, ArrowLeft, Check, ChevronDown, ChevronRight, Cloud, Copy,
   File, FileImage, FileText, Film, Folder, FolderPlus, HardDrive, Image, MoreHorizontal,
-  Moon, Plus, Search, Settings2, ShieldCheck, Sun, Upload, X,
+  Languages, Moon, Plus, Search, Settings2, ShieldCheck, Sun, Upload, X,
 } from "lucide-react";
 import { buildObjectUrl, formatLinks, type ShareFormat, type UrlRules } from "./lib/urlMapping";
+import { detectLocale, formatItemCount, isLocale, locales, translate, type Locale, type TranslationKey } from "./i18n";
+import { resolveTheme, type ThemePreference } from "./theme";
 import "./App.css";
+import "./preferences.css";
 
 type EntryKind = "directory" | "image" | "video" | "document" | "archive" | "file";
 type Entry = { path: string; name: string; kind: EntryKind; size: string; modified: string; previewUrl?: string };
@@ -37,6 +40,33 @@ function loadRules(): UrlRules {
   }
 }
 
+function loadLocale(): Locale {
+  const saved = localStorage.getItem("r2-list-language");
+  return isLocale(saved) ? saved : detectLocale(navigator.language);
+}
+
+function loadThemePreference(): ThemePreference {
+  const saved = localStorage.getItem("r2-list-theme-mode");
+  if (saved === "system" || saved === "light" || saved === "dark") return saved;
+  return "system";
+}
+
+function formatModified(value: string, locale: Locale): string {
+  const t = (key: TranslationKey) => translate(locale, key);
+  if (value === "Today") return t("today");
+  if (value.startsWith("Today, ")) return `${t("today")} · ${value.slice(7)}`;
+  if (value === "Yesterday") return t("yesterday");
+  if (value.startsWith("Yesterday, ")) return `${t("yesterday")} · ${value.slice(11)}`;
+
+  const date = value.match(/^Oct (\d+), (\d{4})$/);
+  if (date) {
+    return new Intl.DateTimeFormat(locales.find((item) => item.id === locale)?.htmlLang, {
+      dateStyle: "medium",
+    }).format(new Date(Number(date[2]), 9, Number(date[1])));
+  }
+  return value;
+}
+
 function EntryIcon({ kind, size = 18 }: { kind: EntryKind; size?: number }) {
   if (kind === "directory") return <Folder size={size} className="entry-icon folder-icon" />;
   if (kind === "image") return <FileImage size={size} className="entry-icon image-icon" />;
@@ -53,14 +83,27 @@ function App() {
   const [rules, setRules] = useState<UrlRules>(loadRules);
   const [draftRules, setDraftRules] = useState<UrlRules>(loadRules);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">(() => localStorage.getItem("r2-list-theme") === "dark" ? "dark" : "light");
+  const [locale, setLocale] = useState<Locale>(loadLocale);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [menu, setMenu] = useState<MenuState>(null);
   const [toast, setToast] = useState("");
+  const theme = resolveTheme(themePreference, systemDark);
+  const t = (key: TranslationKey, values?: Record<string, string | number>) => translate(locale, key, values);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("r2-list-theme", theme);
-  }, [theme]);
+    document.documentElement.lang = locales.find((item) => item.id === locale)?.htmlLang ?? "en";
+    localStorage.setItem("r2-list-theme-mode", themePreference);
+    localStorage.setItem("r2-list-language", locale);
+  }, [locale, theme, themePreference]);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const updateSystemTheme = () => setSystemDark(media.matches);
+    updateSystemTheme();
+    media.addEventListener("change", updateSystemTheme);
+    return () => media.removeEventListener("change", updateSystemTheme);
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(""), 2600);
@@ -74,7 +117,7 @@ function App() {
   const selectedEntry = entries.find((entry) => entry.path === selectedPath) ?? visibleEntries[0];
   const pathParts = currentPath ? currentPath.split("/") : [];
 
-  function showNotConnected() { setToast("真实目录访问将在 Rust 文件系统后端接入后启用"); }
+  function showNotConnected() { setToast(t("realDirectoryPending")); }
   function openRules() { setDraftRules(rules); setSettingsOpen(true); }
   function openEntry(entry: Entry) {
     if (entry.kind === "directory") { setCurrentPath(entry.path); setSearch(""); setSelectedPath(""); }
@@ -93,7 +136,7 @@ function App() {
       ? entries.filter((candidate) => candidate.kind !== "directory" && candidate.path.startsWith(`${entry.path}/`))
       : [entry];
     const links = targets.map((target) => ({ name: target.name, url: buildObjectUrl(target.path, rules) }));
-    if (!links.length) { setToast("此目录目前没有可复制链接的文件"); return; }
+    if (!links.length) { setToast(t("emptyFolder")); return; }
     try {
       const formatted = formatLinks(links, format);
       if (format === "html" && navigator.clipboard.write && typeof ClipboardItem !== "undefined") {
@@ -105,8 +148,9 @@ function App() {
         await navigator.clipboard.writeText(formatted);
       }
       setMenu(null);
-      setToast(`已复制 ${links.length} 个链接 · ${format.toUpperCase()}`);
-    } catch { setToast("剪贴板不可用，请检查应用权限"); }
+      const formatLabel = format === "url" ? t("formatUrl") : format === "markdown" ? t("formatMarkdown") : t("formatHtml");
+      setToast(t("copiedLinks", { count: links.length, format: formatLabel }));
+    } catch { setToast(t("clipboardUnavailable")); }
   }
   function saveRules(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -115,66 +159,66 @@ function App() {
       setRules(draftRules);
       localStorage.setItem("r2-list-url-rules", JSON.stringify(draftRules));
       setSettingsOpen(false);
-      setToast("URL 规则已保存");
-    } catch (error) { setToast(error instanceof Error ? error.message : "URL 规则无效"); }
+      setToast(t("rulesSaved"));
+    } catch { setToast(t("invalidRules")); }
   }
   function safePreview(path: string) {
     try { return buildObjectUrl(path, draftRules); }
-    catch (error) { return error instanceof Error ? error.message : "无效规则"; }
+    catch { return t("invalidRules"); }
   }
 
   return (
     <main className="app-shell" onClick={() => menu && setMenu(null)}>
       <aside className="sidebar">
-        <div className="brand-lockup"><div className="brand-mark"><Cloud size={19} strokeWidth={2.3} /></div><div><strong>R2 List</strong><span>OBJECT WORKSPACE</span></div><button className="icon-button sidebar-more" aria-label="更多选项" title="更多选项"><MoreHorizontal size={18} /></button></div>
-        <div className="sidebar-section"><div className="section-label">WORKSPACE</div><button className="nav-item active"><HardDrive size={17} /><span>文件</span><span className="nav-count">{entries.length}</span></button><button className="nav-item" onClick={openRules}><Settings2 size={17} /><span>URL 规则</span></button></div>
-        <div className="sidebar-section locations-section"><div className="section-heading"><span className="section-label">LOCATIONS</span><button className="icon-button tiny" aria-label="添加位置" title="添加位置" onClick={showNotConnected}><Plus size={15} /></button></div>
-          <button className="location-item selected"><span className="location-dot local-dot" /><span className="location-copy"><strong>Media Library</strong><small>本地目录 · 示例</small></span><ChevronRight size={14} /></button>
-          <button className="location-item" onClick={showNotConnected}><span className="location-dot remote-dot" /><span className="location-copy"><strong>Studio NAS</strong><small>SMB · 未连接</small></span><span className="offline-dot" /></button>
-          <button className="add-location" onClick={showNotConnected}><Plus size={14} /> 添加位置</button>
+        <div className="brand-lockup"><div className="brand-mark"><Cloud size={19} strokeWidth={2.3} /></div><div><strong>R2 List</strong><span>{t("objectWorkspace")}</span></div><button className="icon-button sidebar-more" aria-label={t("viewOptions")} title={t("viewOptions")}><MoreHorizontal size={18} /></button></div>
+        <div className="sidebar-section"><div className="section-label">{t("workspace")}</div><button className="nav-item active"><HardDrive size={17} /><span>{t("files")}</span><span className="nav-count">{entries.length}</span></button><button className="nav-item" onClick={openRules}><Settings2 size={17} /><span>{t("urlRules")}</span></button></div>
+        <div className="sidebar-section locations-section"><div className="section-heading"><span className="section-label">{t("locations")}</span><button className="icon-button tiny" aria-label={t("addLocation")} title={t("addLocation")} onClick={showNotConnected}><Plus size={15} /></button></div>
+          <button className="location-item selected"><span className="location-dot local-dot" /><span className="location-copy"><strong>{t("mediaLibrary")}</strong><small>{t("localSample")}</small></span><ChevronRight size={14} /></button>
+          <button className="location-item" onClick={showNotConnected}><span className="location-dot remote-dot" /><span className="location-copy"><strong>{t("studioNas")}</strong><small>{t("smbOffline")}</small></span><span className="offline-dot" /></button>
+          <button className="add-location" onClick={showNotConnected}><Plus size={14} /> {t("addLocation")}</button>
         </div>
-        <div className="sidebar-bottom"><div className="sync-note"><span className="note-icon"><ShieldCheck size={15} /></span><span><strong>仅映射 URL</strong><small>同步由外部服务负责</small></span></div>
-          <button className="profile-button" onClick={() => setTheme(theme === "light" ? "dark" : "light")}><span className="avatar">R</span><span className="profile-copy"><strong>R2 List</strong><small>个人工作区</small></span>{theme === "light" ? <Moon size={16} /> : <Sun size={16} />}</button>
+        <div className="sidebar-bottom"><div className="sync-note"><span className="note-icon"><ShieldCheck size={15} /></span><span><strong>{t("urlOnly")}</strong><small>{t("externalSync")}</small></span></div>
+          <div className="profile-button"><span className="avatar">R</span><span className="profile-copy"><strong>R2 List</strong><small>{t("personalWorkspace")}</small></span></div>
         </div>
       </aside>
 
       <section className="content-area">
-        <header className="topbar"><div className="breadcrumbs"><button className="breadcrumb-root" onClick={() => { setCurrentPath(""); setSearch(""); }}>Media Library</button>{pathParts.map((part, index) => { const targetPath = pathParts.slice(0, index + 1).join("/"); return <span className="breadcrumb-part" key={targetPath}><ChevronRight size={13} /><button onClick={() => setCurrentPath(targetPath)}>{part}</button></span>; })}</div>
-          <div className="topbar-actions"><span className="connection-state"><span />LOCAL</span><button className="icon-button" aria-label="URL 规则设置" title="URL 规则设置" onClick={openRules}><Settings2 size={17} /></button><button className="avatar mini-avatar" aria-label="切换深色模式" title="切换深色模式" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>{theme === "light" ? <Moon size={16} /> : <Sun size={16} />}</button></div>
+        <header className="topbar"><div className="breadcrumbs"><button className="breadcrumb-root" onClick={() => { setCurrentPath(""); setSearch(""); }}>{t("mediaLibrary")}</button>{pathParts.map((part, index) => { const targetPath = pathParts.slice(0, index + 1).join("/"); return <span className="breadcrumb-part" key={targetPath}><ChevronRight size={13} /><button onClick={() => setCurrentPath(targetPath)}>{part}</button></span>; })}</div>
+          <div className="topbar-actions"><span className="connection-state"><span />{t("local")}</span><label className="preference-select" title={t("language")}><Languages size={14} /><select aria-label={t("language")} value={locale} onChange={(event) => { if (isLocale(event.currentTarget.value)) setLocale(event.currentTarget.value); }}>{locales.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select><ChevronDown size={12} /></label><label className="preference-select theme-select" title={t("theme")}>{theme === "dark" ? <Moon size={14} /> : <Sun size={14} />}<select aria-label={t("theme")} value={themePreference} onChange={(event) => setThemePreference(event.currentTarget.value as ThemePreference)}><option value="system">{t("themeSystem")}</option><option value="light">{t("themeLight")}</option><option value="dark">{t("themeDark")}</option></select><ChevronDown size={12} /></label><button className="icon-button" aria-label={t("urlRules")} title={t("urlRules")} onClick={openRules}><Settings2 size={17} /></button></div>
         </header>
-        <div className="workspace-heading"><div><div className="eyebrow"><span className="eyebrow-line" />LOCAL DIRECTORY <span className="muted-separator">/</span> R2 URL MAPPED</div><h1>{pathParts[pathParts.length - 1] ?? "Media Library"}</h1><p className="workspace-path"><HardDrive size={13} /> ~/Studio/Media Library <span className="path-dot">·</span> {visibleEntries.length} items</p></div>
-          <div className="heading-actions"><button className="button-secondary" onClick={openRules}><Settings2 size={15} /> URL 规则</button><button className="button-primary" onClick={showNotConnected}><Upload size={15} /> 添加文件</button></div>
+        <div className="workspace-heading"><div><div className="eyebrow"><span className="eyebrow-line" />{t("localDirectory")} <span className="muted-separator">/</span> {t("urlMapped")}</div><h1>{pathParts[pathParts.length - 1] ?? t("mediaLibrary")}</h1><p className="workspace-path"><HardDrive size={13} /> {t("samplePath")} <span className="path-dot">·</span> {formatItemCount(locale, visibleEntries.length)}</p></div>
+          <div className="heading-actions"><button className="button-secondary" onClick={openRules}><Settings2 size={15} /> {t("urlRules")}</button><button className="button-primary" onClick={showNotConnected}><Upload size={15} /> {t("addFiles")}</button></div>
         </div>
-        <div className="toolbar"><div className="search-box"><Search size={16} /><input aria-label="搜索文件" value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder="搜索文件或文件夹…" /><kbd>⌘ F</kbd></div><div className="toolbar-spacer" /><button className="toolbar-button" onClick={showNotConnected}><FolderPlus size={16} /><span>新建文件夹</span></button><span className="toolbar-divider" /><button className="icon-button" aria-label="排序方式" title="按名称排序"><ChevronDown size={16} /></button><button className="icon-button" aria-label="更多视图选项" title="视图选项"><MoreHorizontal size={17} /></button></div>
-        <div className="file-table-wrap">{currentPath && <button className="back-row" onClick={() => setCurrentPath(parentPath(currentPath))}><ArrowLeft size={14} /> 返回上级</button>}
-          <div className="table-header"><span>名称</span><span>大小</span><span>修改时间</span><span /></div>
+        <div className="toolbar"><div className="search-box"><Search size={16} /><input aria-label={t("searchAria")} value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder={t("searchPlaceholder")} /><kbd>⌘ F</kbd></div><div className="toolbar-spacer" /><button className="toolbar-button" onClick={showNotConnected}><FolderPlus size={16} /><span>{t("newFolder")}</span></button><span className="toolbar-divider" /><button className="icon-button" aria-label={t("sortByName")} title={t("sortByName")}><ChevronDown size={16} /></button><button className="icon-button" aria-label={t("viewOptions")} title={t("viewOptions")}><MoreHorizontal size={17} /></button></div>
+        <div className="file-table-wrap">{currentPath && <button className="back-row" onClick={() => setCurrentPath(parentPath(currentPath))}><ArrowLeft size={14} /> {t("back")}</button>}
+          <div className="table-header"><span>{t("name")}</span><span>{t("size")}</span><span>{t("modified")}</span><span /></div>
           {visibleEntries.length ? visibleEntries.map((entry, index) => <button className={`file-row ${selectedPath === entry.path ? "selected" : ""}`} key={entry.path} onClick={() => openEntry(entry)} onDoubleClick={() => entry.kind === "directory" && openEntry(entry)} onContextMenu={(event) => openContextMenu(event, entry)} style={{ "--row-index": index } as CSSProperties}>
-            <span className="file-name-cell"><EntryIcon kind={entry.kind} /><span className="file-name-copy"><strong>{entry.name}</strong>{entry.kind === "directory" && <small>文件夹</small>}</span>{entry.kind === "directory" && <ChevronRight className="row-chevron" size={15} />}</span><span className="file-meta">{entry.size}</span><span className="file-meta modified-meta">{entry.modified}</span><span className="row-menu" onClick={(event) => { event.stopPropagation(); openContextMenu(event, entry); }}><MoreHorizontal size={16} /></span>
-          </button>) : <div className="empty-state"><Search size={20} /><strong>没有匹配的文件</strong><span>试试其他关键词</span></div>}
-          <div className="table-footnote"><span className="footnote-dot" />示例目录 <span>·</span> 真实文件访问尚未连接</div>
+            <span className="file-name-cell"><EntryIcon kind={entry.kind} /><span className="file-name-copy"><strong>{entry.name}</strong>{entry.kind === "directory" && <small>{t("directory")}</small>}</span>{entry.kind === "directory" && <ChevronRight className="row-chevron" size={15} />}</span><span className="file-meta">{entry.size}</span><span className="file-meta modified-meta">{formatModified(entry.modified, locale)}</span><span className="row-menu" onClick={(event) => { event.stopPropagation(); openContextMenu(event, entry); }}><MoreHorizontal size={16} /></span>
+          </button>) : <div className="empty-state"><Search size={20} /><strong>{t("noMatches")}</strong><span>{t("tryKeywords")}</span></div>}
+          <div className="table-footnote"><span className="footnote-dot" />{t("sampleDirectory")} <span>·</span> {t("realFilesNotConnected")}</div>
         </div>
-        <footer className="statusbar"><span><span className="status-indicator" />示例模式 · 文件操作待接入</span><span>R2 URL <strong>{rules.baseUrl.replace(/^https?:\/\//, "")}</strong></span></footer>
+        <footer className="statusbar"><span><span className="status-indicator" />{t("sampleMode")} · {t("fileOpsPending")}</span><span>R2 URL <strong>{rules.baseUrl.replace(/^https?:\/\//, "")}</strong></span></footer>
       </section>
 
-      <aside className="inspector"><div className="inspector-header"><div><span className="section-label">QUICK LOOK</span><h2>预览</h2></div><button className="icon-button" aria-label="更多预览操作" title="更多预览操作" onClick={() => selectedEntry && openContextMenuForButton(selectedEntry)}><MoreHorizontal size={18} /></button></div>
-        {selectedEntry ? <><div className={`preview-stage ${selectedEntry.kind !== "image" ? "non-image-stage" : ""}`}>{selectedEntry.kind === "image" && selectedEntry.previewUrl ? <img src={selectedEntry.previewUrl} alt={selectedEntry.name} /> : <div className={`preview-document preview-${selectedEntry.kind}`}><EntryIcon kind={selectedEntry.kind} size={34} /><span>{selectedEntry.name.split(".").pop()?.toUpperCase()}</span><small>{selectedEntry.kind === "video" ? "视频预览接入中" : "快速预览接入中"}</small></div>}<button className="preview-expand" aria-label="打开文件" title="打开文件"><ArrowDownToLine size={15} /></button></div>
-          <div className="preview-caption"><span className="filetype-label">{selectedEntry.name.split(".").pop()?.toUpperCase() ?? "FILE"}</span><span className="file-size-label">{selectedEntry.size}</span></div><h3 className="preview-title">{selectedEntry.name}</h3><div className="preview-path"><Folder size={13} /> {parentPath(selectedEntry.path) || "Media Library"}</div>
-          <div className="inspector-divider" /><div className="inspector-section-title"><span>R2 OBJECT URL</span><button className="text-action" onClick={openRules}>编辑规则</button></div><div className="url-preview"><span>{buildObjectUrl(selectedEntry.path, rules)}</span></div><button className="copy-link-button" onClick={() => copyLinks(selectedEntry, "url")}><Copy size={15} />复制 URL<ChevronDown size={14} /></button>
-          <div className="details-list"><div><span>添加时间</span><strong>Today, 09:12</strong></div><div><span>存储位置</span><strong>本地目录</strong></div><div><span>公开状态</span><strong className="public-state"><span />规则已配置</strong></div></div><button className="share-options" onClick={() => openContextMenuForButton(selectedEntry)}><span><Image size={15} />复制为其他格式</span><ChevronRight size={15} /></button></>
-          : <div className="inspector-empty"><Image size={24} /><span>选择文件以查看预览</span></div>}
-        <div className="inspector-footer"><span><ShieldCheck size={14} /> 本应用不执行 R2 同步</span></div>
+      <aside className="inspector"><div className="inspector-header"><div><span className="section-label">{t("quickLook")}</span><h2>{t("preview")}</h2></div><button className="icon-button" aria-label={t("morePreviewActions")} title={t("morePreviewActions")} onClick={() => selectedEntry && openContextMenuForButton(selectedEntry)}><MoreHorizontal size={18} /></button></div>
+        {selectedEntry ? <><div className={`preview-stage ${selectedEntry.kind !== "image" ? "non-image-stage" : ""}`}>{selectedEntry.kind === "image" && selectedEntry.previewUrl ? <img src={selectedEntry.previewUrl} alt={selectedEntry.name} /> : <div className={`preview-document preview-${selectedEntry.kind}`}><EntryIcon kind={selectedEntry.kind} size={34} /><span>{selectedEntry.name.split(".").pop()?.toUpperCase()}</span><small>{selectedEntry.kind === "video" ? t("videoPreviewPending") : t("previewPending")}</small></div>}<button className="preview-expand" aria-label={t("openFile")} title={t("openFile")}><ArrowDownToLine size={15} /></button></div>
+          <div className="preview-caption"><span className="filetype-label">{selectedEntry.name.split(".").pop()?.toUpperCase() ?? "FILE"}</span><span className="file-size-label">{selectedEntry.size}</span></div><h3 className="preview-title">{selectedEntry.name}</h3><div className="preview-path"><Folder size={13} /> {parentPath(selectedEntry.path) || t("mediaLibrary")}</div>
+          <div className="inspector-divider" /><div className="inspector-section-title"><span>{t("r2ObjectUrl")}</span><button className="text-action" onClick={openRules}>{t("editRules")}</button></div><div className="url-preview"><span>{buildObjectUrl(selectedEntry.path, rules)}</span></div><button className="copy-link-button" onClick={() => copyLinks(selectedEntry, "url")}><Copy size={15} />{t("copyUrl")}<ChevronDown size={14} /></button>
+          <div className="details-list"><div><span>{t("addedAt")}</span><strong>{new Intl.DateTimeFormat(locales.find((item) => item.id === locale)?.htmlLang, { dateStyle: "medium", timeStyle: "short" }).format(new Date())}</strong></div><div><span>{t("storageLocation")}</span><strong>{t("localStorageLabel")}</strong></div><div><span>{t("publicStatus")}</span><strong className="public-state"><span />{t("ruleConfigured")}</strong></div></div><button className="share-options" onClick={() => openContextMenuForButton(selectedEntry)}><span><Image size={15} />{t("copyOtherFormats")}</span><ChevronRight size={15} /></button></>
+          : <div className="inspector-empty"><Image size={24} /><span>{t("chooseFileToPreview")}</span></div>}
+        <div className="inspector-footer"><span><ShieldCheck size={14} /> {t("noR2Sync")}</span></div>
       </aside>
 
-      {menu && <div className="context-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}><div className="context-title">复制链接 <span>{menu.entry.kind === "directory" ? "目录" : "文件"}</span></div><button onClick={() => copyLinks(menu.entry, "url")}><Copy size={15} /><span>纯文本 URL</span><kbd>TXT</kbd></button><button onClick={() => copyLinks(menu.entry, "markdown")}><FileText size={15} /><span>Markdown</span><kbd>MD</kbd></button><button onClick={() => copyLinks(menu.entry, "html")}><Archive size={15} /><span>HTML 链接</span><kbd>HTML</kbd></button>{menu.entry.kind === "directory" && <div className="context-hint">将递归复制目录内所有文件链接</div>}</div>}
+      {menu && <div className="context-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}><div className="context-title">{t("copyLinks")} <span>{menu.entry.kind === "directory" ? t("directory") : t("file")}</span></div><button onClick={() => copyLinks(menu.entry, "url")}><Copy size={15} /><span>{t("plainTextUrl")}</span><kbd>TXT</kbd></button><button onClick={() => copyLinks(menu.entry, "markdown")}><FileText size={15} /><span>{t("markdown")}</span><kbd>MD</kbd></button><button onClick={() => copyLinks(menu.entry, "html")}><Archive size={15} /><span>{t("htmlLinks")}</span><kbd>HTML</kbd></button>{menu.entry.kind === "directory" && <div className="context-hint">{t("recursiveCopyHint")}</div>}</div>}
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSettingsOpen(false)}><form className="settings-modal" onSubmit={saveRules}>
-        <div className="modal-heading"><div><span className="section-label">LINK CONFIGURATION</span><h2>URL 规则</h2></div><button type="button" className="icon-button" aria-label="关闭" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
-        <p className="modal-description">根据目录相对路径生成公开对象 URL。文件同步仍由外部服务负责。</p>
-        <label className="field-label">公开 URL 基址<input value={draftRules.baseUrl} onChange={(event) => setDraftRules({ ...draftRules, baseUrl: event.currentTarget.value })} placeholder="https://cdn.example.com" /></label>
-        <label className="field-label">对象前缀<input value={draftRules.prefix} onChange={(event) => setDraftRules({ ...draftRules, prefix: event.currentTarget.value })} placeholder="可留空" /></label>
-        <label className="field-label">存储桶名称 <span>模板可引用 {"{bucket}"}</span><input value={draftRules.bucket ?? ""} onChange={(event) => setDraftRules({ ...draftRules, bucket: event.currentTarget.value })} placeholder="可选" /></label>
-        <label className="field-label">高级模板 <span>可选</span><input value={draftRules.template ?? ""} onChange={(event) => setDraftRules({ ...draftRules, template: event.currentTarget.value })} placeholder="{base}/{key} 或 {base}/{bucket}/{key}" /></label>
-        <div className="template-help"><span>{"{base}"}</span>公开基址 <span>{"{key}"}</span>前缀 + 相对路径 <span>{"{bucket}"}</span>存储桶名</div><div className="modal-preview"><span>预览</span><code>{safePreview(selectedEntry?.path ?? "folder/file.jpg")}</code></div>
-        <div className="modal-actions"><button type="button" className="button-secondary" onClick={() => setSettingsOpen(false)}>取消</button><button className="button-primary" type="submit"><Check size={15} />保存规则</button></div>
+        <div className="modal-heading"><div><span className="section-label">{t("linkConfiguration")}</span><h2>{t("rulesTitle")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
+        <p className="modal-description">{t("rulesDescription")}</p>
+        <label className="field-label">{t("publicBase")}<input value={draftRules.baseUrl} onChange={(event) => setDraftRules({ ...draftRules, baseUrl: event.currentTarget.value })} placeholder="https://cdn.example.com" /></label>
+        <label className="field-label">{t("objectPrefix")}<input value={draftRules.prefix} onChange={(event) => setDraftRules({ ...draftRules, prefix: event.currentTarget.value })} placeholder={t("optional")} /></label>
+        <label className="field-label">{t("bucketName")} <span>{t("bucketReferenced")}</span><input value={draftRules.bucket ?? ""} onChange={(event) => setDraftRules({ ...draftRules, bucket: event.currentTarget.value })} placeholder={t("optional")} /></label>
+        <label className="field-label">{t("advancedTemplate")} <span>{t("optional")}</span><input value={draftRules.template ?? ""} onChange={(event) => setDraftRules({ ...draftRules, template: event.currentTarget.value })} placeholder="{base}/{key}" /></label>
+        <div className="template-help"><span>{"{base}"}</span>{t("helpBase")} <span>{"{key}"}</span>{t("helpKey")} <span>{"{bucket}"}</span>{t("helpBucket")}</div><div className="modal-preview"><span>{t("previewSample")}</span><code>{safePreview(selectedEntry?.path ?? "folder/file.jpg")}</code></div>
+        <div className="modal-actions"><button type="button" className="button-secondary" onClick={() => setSettingsOpen(false)}>{t("cancel")}</button><button className="button-primary" type="submit"><Check size={15} />{t("saveRules")}</button></div>
       </form></div>}
       {toast && <div className="toast"><Check size={15} />{toast}</div>}
     </main>
