@@ -5,10 +5,12 @@ import {
   Languages, Moon, Plus, Search, Settings2, ShieldCheck, Sun, Trash2, Upload, X,
 } from "lucide-react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { buildObjectUrl, formatLinks, type ShareFormat, type UrlRules } from "./lib/urlMapping";
 import { detectLocale, formatItemCount, isLocale, locales, translate, type Locale, type TranslationKey } from "./i18n";
 import { resolveTheme, type ThemePreference } from "./theme";
+import { getVersionStatus } from "./version";
 import { PreviewContent } from "./PreviewContent";
 import "./App.css";
 import "./preferences.css";
@@ -20,7 +22,10 @@ type PreviewData = { mimeType: string; dataBase64: string; sizeBytes: number };
 type DirectoryConfig = { path: string; rules: UrlRules };
 type UserConfig = { directories: DirectoryConfig[]; activeDirectory: string | null; locale: Locale | null; theme: ThemePreference | null };
 type MenuState = { x: number; y: number; entry: Entry } | null;
+type UpdateStatus = { status: "checking" | "up-to-date" | "update-available" | "error"; latest: string | null; message: string };
 const initialRules: UrlRules = { baseUrl: "https://cdn.studio-example.com", prefix: "northstar/media", template: "" };
+const GITHUB_REPO_URL = "https://github.com/Kaiyuan/r2-list";
+const GITHUB_RELEASES_URL = "https://github.com/Kaiyuan/r2-list/releases/latest";
 const parentPath = (path: string) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 const formatBytes = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -74,6 +79,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [appVersion, setAppVersion] = useState("");
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ status: "checking", latest: null, message: "" });
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [locale, setLocale] = useState<Locale>(loadLocale);
@@ -141,6 +147,55 @@ function App() {
   useEffect(() => {
     void invoke<string>("app_version").then(setAppVersion).catch(() => setAppVersion(""));
   }, []);
+  useEffect(() => {
+    if (!aboutOpen) return;
+    if (!appVersion) {
+      setUpdateStatus({ status: "error", latest: null, message: t("versionCheckFailed") });
+      return;
+    }
+
+    let active = true;
+    const controller = new AbortController();
+    setUpdateStatus({ status: "checking", latest: null, message: t("checkingUpdates") });
+
+    void fetch("https://api.github.com/repos/Kaiyuan/r2-list/releases/latest", {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "R2-List-App",
+      },
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`${response.status}`);
+      const payload = await response.json() as { tag_name?: string };
+      if (!payload.tag_name) throw new Error("missing tag");
+      return payload.tag_name;
+    }).then((latestTag) => {
+      if (!active) return;
+      const latestVersion = latestTag.replace(/^v/i, "");
+      const status = getVersionStatus(appVersion, latestVersion);
+      if (status.status === "update-available") {
+        setUpdateStatus({
+          status: "update-available",
+          latest: status.latest,
+          message: `${t("updateAvailable")}: ${status.latest}`,
+        });
+        return;
+      }
+      setUpdateStatus({
+        status: "up-to-date",
+        latest: status.latest,
+        message: t("upToDate"),
+      });
+    }).catch(() => {
+      if (!active) return;
+      setUpdateStatus({ status: "error", latest: null, message: t("versionCheckFailed") });
+    });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [aboutOpen, appVersion, locale]);
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(""), 2600);
@@ -210,6 +265,9 @@ function App() {
     setDraftRules(rules);
     setSettingsOpen(true);
   }
+  function openGithubProject() {
+    void openUrl(GITHUB_REPO_URL);
+  }
   async function loadDirectory(path: string) {
     setLoadingDirectory(true);
     try {
@@ -232,7 +290,7 @@ function App() {
   }
   async function chooseDirectory() {
     try {
-      const selected = await open({ directory: true, multiple: false });
+      const selected = await openDialog({ directory: true, multiple: false });
       if (typeof selected === "string") await loadDirectory(selected);
     } catch (error) { setToast(`${t("directoryLoadFailed")}: ${String(error)}`); }
   }
@@ -266,7 +324,7 @@ function App() {
   }
   async function chooseFiles() {
     try {
-      const selected = await open({ multiple: true });
+      const selected = await openDialog({ multiple: true });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
       const listing = await invoke<DirectoryListing>("import_files", { paths, directory: currentPath });
@@ -387,7 +445,7 @@ function App() {
         <div className="template-help"><span>{"{base}"}</span>{t("helpBase")} <span>{"{key}"}</span>{t("helpKey")} <span>{"{bucket}"}</span>{t("helpBucket")}</div><div className="modal-preview"><span>{t("previewSample")}</span><code>{safePreview(selectedEntry?.path ?? "folder/file.jpg")}</code></div>
         <div className="modal-actions"><button type="button" className="button-secondary" onClick={() => setSettingsOpen(false)}>{t("cancel")}</button><button className="button-primary" type="submit"><Check size={15} />{t("saveRules")}</button></div>
       </form></div>}
-      {aboutOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setAboutOpen(false)}><section className="settings-modal about-modal" role="dialog" aria-modal="true" aria-label={t("aboutApp")}><div className="modal-heading"><div><span className="section-label">R2 LIST</span><h2>{t("aboutApp")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setAboutOpen(false)}><X size={18} /></button></div><p className="modal-description">{t("aboutDescription")}</p><div className="about-version"><span>{t("version")}</span><strong>{appVersion || "0.1.0"}</strong></div><div className="modal-actions"><button type="button" className="button-primary" onClick={() => setAboutOpen(false)}>{t("close")}</button></div></section></div>}
+      {aboutOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setAboutOpen(false)}><section className="settings-modal about-modal" role="dialog" aria-modal="true" aria-label={t("aboutApp")}><div className="modal-heading"><div><span className="section-label">R2 LIST</span><h2>{t("aboutApp")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setAboutOpen(false)}><X size={18} /></button></div><p className="modal-description">{t("aboutDescription")}</p><div className="about-link-row"><button type="button" className="about-link-button" onClick={openGithubProject}>{t("githubProject")}</button><button type="button" className="about-link-button" onClick={() => void openUrl(GITHUB_RELEASES_URL)}>{t("viewLatestRelease")}</button></div><div className="about-version"><span>{t("version")}</span><strong>{appVersion || "0.1.0"}</strong></div><div className="about-update-status"><span>{t("versionCheck")}</span><div className={`update-status-pill ${updateStatus.status}`}>{updateStatus.message || t("checkingUpdates")}{updateStatus.latest ? <small> · {t("latestVersion")}: {updateStatus.latest}</small> : null}</div></div><div className="modal-actions"><button type="button" className="button-primary" onClick={() => setAboutOpen(false)}>{t("close")}</button></div></section></div>}
       {newFolderOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setNewFolderOpen(false)}><form className="settings-modal" onSubmit={createFolder}><div className="modal-heading"><div><span className="section-label">{t("localDirectoryActive")}</span><h2>{t("newFolder")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setNewFolderOpen(false)}><X size={18} /></button></div><label className="field-label">{t("folderName")}<input autoFocus value={newFolderName} onChange={(event) => setNewFolderName(event.currentTarget.value)} required maxLength={255} /></label><div className="modal-actions"><button type="button" className="button-secondary" onClick={() => setNewFolderOpen(false)}>{t("cancel")}</button><button className="button-primary" type="submit"><FolderPlus size={15} />{t("createFolder")}</button></div></form></div>}
       {toast && <div className="toast"><Check size={15} />{toast}</div>}
     </main>

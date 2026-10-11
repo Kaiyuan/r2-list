@@ -1,4 +1,5 @@
 :root {
+  font-size: 14px;
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -27,9 +28,9 @@
 :root[data-theme='dark'] .public-state span { background: #9bb8dc; }
 :root[data-theme='dark'] .avatar { color: #c1d1e6; background: #34475f; }
 * { box-sizing: border-box; }
-body { min-width: 360px; min-height: 100vh; margin: 0; }
-button, input { font: inherit; } button { color: inherit; }
-button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+body { min-width: 360px; min-height: 100vh; margin: 0; font-size: 14px; line-height: 1.45; }
+button, input, select, textarea { font: inherit; } button { color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .app-shell { height: 100vh; min-height: 620px; display: grid; grid-template-columns: 228px minmax(420px,1fr) 316px; overflow: hidden; background: var(--canvas); }
 .sidebar { display: flex; flex-direction: column; min-width: 0; padding: 22px 14px 14px; border-right: 1px solid var(--line); background: var(--panel); }
 .brand-lockup { height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 7px; margin-bottom: 34px; }
@@ -75,7 +76,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .file-preview-docx { width: 100%; max-height: 68vh; align-self: stretch; overflow: auto; padding: 14px; color: #20242b; background: #e6eaf0; }.file-preview-docx .docx-wrapper { min-height: 100%; padding: 12px 0; background: transparent; }.file-preview-docx .docx { margin: 0 auto 12px; box-shadow: 0 2px 12px rgba(0,0,0,.18); }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
 :root { font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; }
-body * { font-family: inherit !important; font-size: max(14px, 1em) !important; }
+body *, *::before, *::after { font-family: inherit; line-height: inherit; }
 .app-shell h1 { font-size: 26px !important; }
 .app-shell h2 { font-size: 20px !important; }
 .app-shell h3 { font-size: 16px !important; }
@@ -86,5 +87,16 @@ body * { font-family: inherit !important; font-size: max(14px, 1em) !important; 
 .location-action { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 5px; color: var(--muted); background: transparent; opacity: 0; cursor: pointer; }
 .location-entry:hover .location-action, .location-action:focus-visible { opacity: 1; }
 .location-action:hover { color: #b94b4b; background: var(--panel); }
-.about-version { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+.about-link-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.about-link-button { min-height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--ink-soft); background: var(--panel-soft); font-size: 11px; font-weight: 600; cursor: pointer; }
+.about-link-button:hover { border-color: var(--accent); color: var(--accent); }
+.about-version, .about-update-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .about-version strong { color: var(--ink); font-weight: 600; }
+.about-update-status { align-items: flex-start; }
+.about-update-status > span { flex: 0 0 auto; }
+.update-status-pill { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; padding: 6px 10px; border-radius: 999px; font-size: 11px; line-height: 1.4; text-align: right; }
+.update-status-pill small { color: inherit; opacity: 0.85; }
+.update-status-pill.checking { color: var(--accent-strong); background: var(--accent-soft); }
+.update-status-pill.up-to-date { color: var(--accent-strong); background: var(--accent-soft); }
+.update-status-pill.update-available { color: #855318; background: var(--amber-soft); }
+.update-status-pill.error { color: #8a3a3a; background: rgba(216, 135, 135, 0.12); }
