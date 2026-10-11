@@ -56,6 +56,33 @@
         text-decoration: none;
       }
 
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        clip-path: inset(50%);
+      }
+
+      .language-select {
+        min-height: 36px;
+        padding: 0 30px 0 10px;
+        border: 1px solid #d9dfd9;
+        border-radius: 6px;
+        color: #26332b;
+        background: #fff;
+        font: inherit;
+        font-size: 13px;
+      }
+
       .hero {
         padding: 64px 0 44px;
         text-align: center;
@@ -162,6 +189,22 @@
       }
 
       @media (max-width: 700px) {
+        header {
+          gap: 12px;
+        }
+
+        .header-actions {
+          gap: 10px;
+        }
+
+        .repo-link {
+          font-size: 12px;
+        }
+
+        .language-select {
+          max-width: 112px;
+        }
+
         .hero {
           padding-top: 42px;
         }
@@ -178,15 +221,28 @@
     <div class="page">
       <header>
         <a class="brand" href="./">R2 List</a>
-        <a class="repo-link" href="https://github.com/Kaiyuan/r2-list">查看 GitHub 项目 →</a>
+        <div class="header-actions">
+          <label>
+            <span class="sr-only" data-i18n="languageLabel">页面语言</span>
+            <select class="language-select" id="language-select" aria-label="页面语言">
+              <option value="en">English</option>
+              <option value="fr">Français</option>
+              <option value="zh-CN">简体中文</option>
+              <option value="zh-TW">繁體中文</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+            </select>
+          </label>
+          <a class="repo-link" href="https://github.com/Kaiyuan/r2-list" data-i18n="repoLink">查看 GitHub 项目 →</a>
+        </div>
       </header>
 
       <main>
         <section class="hero">
-          <div class="eyebrow">Your files, ready for R2</div>
-          <p><img src="./images/r2list-icon.png" alt="R2 List" / style="max-width: 256px;"></p>
-          <h1>整理文件，复制链接。</h1>
-          <p class="intro">
+          <div class="eyebrow" data-i18n="heroEyebrow">Your files, ready for R2</div>
+          <p><img src="./images/r2list-icon.png" alt="R2 List" style="max-width: 256px;" data-i18n-attr="alt:appImageAlt"></p>
+          <h1 data-i18n="heroTitle">整理文件，复制链接。</h1>
+          <p class="intro" data-i18n="heroIntro">
             R2 List 是一个轻量桌面文件工作区。选择本地目录，即可根据相对路径生成
             Cloudflare R2 对象 URL，并快速复制为 URL、Markdown 或 HTML 链接。
           </p>
@@ -194,8 +250,9 @@
             <a
               class="button button-primary"
               href="https://github.com/Kaiyuan/r2-list/releases/latest"
+              data-i18n="latestRelease"
             >下载最新版本</a>
-            <a class="button" href="https://github.com/Kaiyuan/r2-list/releases">所有版本</a>
+            <a class="button" href="https://github.com/Kaiyuan/r2-list/releases" data-i18n="allReleases">所有版本</a>
           </div>
         </section>
 
@@ -205,28 +262,122 @@
             alt="R2 List Windows 桌面界面截图"
             width="1440"
             height="900"
+            data-i18n-attr="alt:screenshotAlt"
           />
         </figure>
 
-        <section class="features" aria-label="功能">
+        <section class="features" aria-label="功能" data-i18n-attr="aria-label:featuresLabel">
           <article class="feature">
-            <h2>文件工作区</h2>
-            <p>浏览、搜索本地目录，新建文件夹或导入文件；重名文件会自动改名，不覆盖原文件。</p>
+            <h2 data-i18n="workspaceTitle">文件工作区</h2>
+            <p data-i18n="workspaceText">浏览、搜索本地目录，新建文件夹或导入文件；重名文件会自动改名，不覆盖原文件。</p>
           </article>
           <article class="feature">
-            <h2>链接一键复制</h2>
-            <p>根据目录相对路径生成 R2 对象 URL，并复制为纯链接、Markdown 或 HTML 格式。</p>
+            <h2 data-i18n="copyTitle">链接一键复制</h2>
+            <p data-i18n="copyText">根据目录相对路径生成 R2 对象 URL，并复制为纯链接、Markdown 或 HTML 格式。</p>
           </article>
           <article class="feature">
-            <h2>桌面原生体验</h2>
-            <p>基于 Tauri 构建，支持 Windows、macOS 和 Linux，并提供多语言界面与主题切换。</p>
+            <h2 data-i18n="desktopTitle">桌面原生体验</h2>
+            <p data-i18n="desktopText">基于 Tauri 构建，支持 Windows、macOS 和 Linux，并提供多语言界面与主题切换。</p>
           </article>
         </section>
       </main>
 
       <footer>
-        R2 List 只生成和复制 URL，不会上传或同步文件到 Cloudflare R2。
+        <span data-i18n="footerText">R2 List 只生成和复制 URL，不会上传或同步文件到 Cloudflare R2。</span>
       </footer>
     </div>
+    <script>
+      const translations = {
+        en: {
+          languageLabel: "Page language", repoLink: "View on GitHub →", heroEyebrow: "Your files, ready for R2",
+          appImageAlt: "R2 List app icon", heroTitle: "Organize files. Copy links.",
+          heroIntro: "R2 List is a lightweight desktop workspace for files. Choose a local folder to build Cloudflare R2 object URLs from relative paths, then copy them as URLs, Markdown, or HTML.",
+          latestRelease: "Download latest release", allReleases: "All releases", screenshotAlt: "R2 List desktop app on Windows",
+          featuresLabel: "Features", workspaceTitle: "File workspace", workspaceText: "Browse and search local folders, create folders, or import files. Name conflicts are resolved without overwriting existing files.",
+          copyTitle: "Copy links in one click", copyText: "Build R2 object URLs from relative paths and copy them as plain URLs, Markdown, or HTML.",
+          desktopTitle: "Native desktop experience", desktopText: "Built with Tauri for Windows, macOS, and Linux, with a multilingual interface and theme options.",
+          footerText: "R2 List creates and copies URLs; it does not upload or sync files to Cloudflare R2."
+        },
+        fr: {
+          languageLabel: "Langue de la page", repoLink: "Voir sur GitHub →", heroEyebrow: "Vos fichiers, prêts pour R2",
+          appImageAlt: "Icône de l’application R2 List", heroTitle: "Organisez vos fichiers. Copiez les liens.",
+          heroIntro: "R2 List est un espace de travail de bureau léger pour vos fichiers. Choisissez un dossier local pour créer des URL d’objets Cloudflare R2 à partir des chemins relatifs, puis copiez-les en URL, Markdown ou HTML.",
+          latestRelease: "Télécharger la dernière version", allReleases: "Toutes les versions", screenshotAlt: "Application R2 List sur Windows",
+          featuresLabel: "Fonctionnalités", workspaceTitle: "Espace de fichiers", workspaceText: "Parcourez et recherchez les dossiers locaux, créez des dossiers ou importez des fichiers. Les doublons sont renommés sans écraser les fichiers existants.",
+          copyTitle: "Copiez les liens en un clic", copyText: "Créez des URL d’objets R2 à partir des chemins relatifs et copiez-les en URL, Markdown ou HTML.",
+          desktopTitle: "Une expérience de bureau native", desktopText: "Conçu avec Tauri pour Windows, macOS et Linux, avec une interface multilingue et plusieurs thèmes.",
+          footerText: "R2 List crée et copie des URL ; il ne téléverse ni ne synchronise de fichiers vers Cloudflare R2."
+        },
+        "zh-CN": {
+          languageLabel: "页面语言", repoLink: "查看 GitHub 项目 →", heroEyebrow: "文件已就绪，轻松使用 R2",
+          appImageAlt: "R2 List 软件图标", heroTitle: "整理文件，复制链接。",
+          heroIntro: "R2 List 是一款轻量桌面文件工作区。选择本地目录，即可根据相对路径生成 Cloudflare R2 对象 URL，并快速复制为 URL、Markdown 或 HTML 链接。",
+          latestRelease: "下载最新版本", allReleases: "所有版本", screenshotAlt: "R2 List Windows 桌面界面截图",
+          featuresLabel: "功能", workspaceTitle: "文件工作区", workspaceText: "浏览、搜索本地目录，新建文件夹或导入文件；重名文件会自动改名，不覆盖原文件。",
+          copyTitle: "链接一键复制", copyText: "根据目录相对路径生成 R2 对象 URL，并复制为纯链接、Markdown 或 HTML 格式。",
+          desktopTitle: "桌面原生体验", desktopText: "基于 Tauri 构建，支持 Windows、macOS 和 Linux，并提供多语言界面与主题切换。",
+          footerText: "R2 List 只生成和复制 URL，不会上传或同步文件到 Cloudflare R2。"
+        },
+        "zh-TW": {
+          languageLabel: "頁面語言", repoLink: "查看 GitHub 專案 →", heroEyebrow: "檔案就緒，輕鬆使用 R2",
+          appImageAlt: "R2 List 軟體圖示", heroTitle: "整理檔案，複製連結。",
+          heroIntro: "R2 List 是一款輕量桌面檔案工作區。選取本機目錄，即可依相對路徑產生 Cloudflare R2 物件 URL，並快速複製為 URL、Markdown 或 HTML 連結。",
+          latestRelease: "下載最新版本", allReleases: "所有版本", screenshotAlt: "R2 List Windows 桌面介面截圖",
+          featuresLabel: "功能", workspaceTitle: "檔案工作區", workspaceText: "瀏覽、搜尋本機目錄，新增資料夾或匯入檔案；重複檔名會自動重新命名，不會覆蓋原檔。",
+          copyTitle: "一鍵複製連結", copyText: "依目錄相對路徑產生 R2 物件 URL，並複製為純文字連結、Markdown 或 HTML。",
+          desktopTitle: "原生桌面體驗", desktopText: "以 Tauri 建置，支援 Windows、macOS 和 Linux，並提供多語介面與佈景主題切換。",
+          footerText: "R2 List 僅產生及複製 URL，不會上傳或同步檔案至 Cloudflare R2。"
+        },
+        ja: {
+          languageLabel: "ページの言語", repoLink: "GitHub で見る →", heroEyebrow: "ファイルを R2 ですぐ活用",
+          appImageAlt: "R2 List アプリのアイコン", heroTitle: "ファイルを整理して、リンクをコピー。",
+          heroIntro: "R2 List は軽量なデスクトップファイルワークスペースです。ローカルフォルダーを選ぶと、相対パスから Cloudflare R2 オブジェクト URL を作成し、URL、Markdown、HTML 形式でコピーできます。",
+          latestRelease: "最新版をダウンロード", allReleases: "すべてのリリース", screenshotAlt: "Windows で動作する R2 List",
+          featuresLabel: "機能", workspaceTitle: "ファイルワークスペース", workspaceText: "ローカルフォルダーの閲覧や検索、新規フォルダーの作成、ファイルの取り込みに対応。重複した名前は既存ファイルを上書きせず変更します。",
+          copyTitle: "リンクをワンクリックでコピー", copyText: "相対パスから R2 オブジェクト URL を作成し、URL、Markdown、HTML 形式でコピーできます。",
+          desktopTitle: "デスクトップならではの使いやすさ", desktopText: "Tauri で構築され、Windows、macOS、Linux に対応。多言語 UI とテーマ切り替えを利用できます。",
+          footerText: "R2 List は URL の作成とコピーのみを行い、Cloudflare R2 へのファイルのアップロードや同期は行いません。"
+        },
+        ko: {
+          languageLabel: "페이지 언어", repoLink: "GitHub에서 보기 →", heroEyebrow: "파일을 R2에서 바로 활용하세요",
+          appImageAlt: "R2 List 앱 아이콘", heroTitle: "파일을 정리하고 링크를 복사하세요.",
+          heroIntro: "R2 List는 가벼운 데스크톱 파일 작업 공간입니다. 로컬 폴더를 선택하면 상대 경로로 Cloudflare R2 객체 URL을 만들고 URL, Markdown 또는 HTML 형식으로 복사할 수 있습니다.",
+          latestRelease: "최신 버전 다운로드", allReleases: "모든 릴리스", screenshotAlt: "Windows용 R2 List 데스크톱 화면",
+          featuresLabel: "기능", workspaceTitle: "파일 작업 공간", workspaceText: "로컬 폴더 탐색과 검색, 폴더 만들기 및 파일 가져오기를 지원합니다. 이름이 겹치면 기존 파일을 덮어쓰지 않고 새 이름을 지정합니다.",
+          copyTitle: "한 번의 클릭으로 링크 복사", copyText: "상대 경로로 R2 객체 URL을 만들고 일반 URL, Markdown 또는 HTML 형식으로 복사할 수 있습니다.",
+          desktopTitle: "데스크톱 네이티브 경험", desktopText: "Tauri 기반으로 Windows, macOS, Linux를 지원하며 다국어 인터페이스와 테마 전환을 제공합니다.",
+          footerText: "R2 List는 URL을 만들고 복사만 하며 Cloudflare R2에 파일을 업로드하거나 동기화하지 않습니다."
+        }
+      };
+
+      const supportedLanguages = Object.keys(translations);
+      const languageSelect = document.querySelector("#language-select");
+      const savedLanguage = window.localStorage.getItem("r2-list-page-language");
+      const browserLanguage = navigator.languages?.find((language) => language.toLowerCase().startsWith("zh"))
+        ? (/(tw|hk|mo|hant)/i.test(navigator.languages.find((language) => language.toLowerCase().startsWith("zh"))) ? "zh-TW" : "zh-CN")
+        : supportedLanguages.find((language) => navigator.language.toLowerCase().startsWith(language.toLowerCase())) || "en";
+
+      function setLanguage(language) {
+        const selectedLanguage = translations[language] ? language : "en";
+        const copy = translations[selectedLanguage];
+        document.documentElement.lang = selectedLanguage;
+        document.title = selectedLanguage === "zh-CN" ? "R2 List — Cloudflare R2 文件链接工作区" : `R2 List — ${copy.heroEyebrow}`;
+        document.querySelector('meta[name="description"]').content = copy.heroIntro;
+        document.querySelectorAll("[data-i18n]").forEach((element) => {
+          element.textContent = copy[element.dataset.i18n];
+        });
+        document.querySelectorAll("[data-i18n-attr]").forEach((element) => {
+          element.dataset.i18nAttr.split(",").forEach((mapping) => {
+            const [attribute, key] = mapping.split(":");
+            element.setAttribute(attribute, copy[key]);
+          });
+        });
+        languageSelect.value = selectedLanguage;
+        window.localStorage.setItem("r2-list-page-language", selectedLanguage);
+      }
+
+      languageSelect.addEventListener("change", (event) => setLanguage(event.currentTarget.value));
+      setLanguage(supportedLanguages.includes(savedLanguage) ? savedLanguage : browserLanguage);
+    </script>
   </body>
 </html>
