@@ -5,10 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f4f5f2" />
     <title>R2 List</title>
+    <style>
+      :root { color-scheme: light; background: #f4f5f2; color: #202923; font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; }
+      * { box-sizing: border-box; }
+      html, body, #root { width: 100%; height: 100%; min-width: 360px; margin: 0; }
+      .startup-screen { height: 100%; display: grid; grid-template-columns: 228px minmax(0, 1fr) 316px; background: #f4f5f2; }
+      .startup-sidebar, .startup-inspector { background: #fff; }
+      .startup-sidebar { border-right: 1px solid #e8ebe7; padding: 22px; }
+      .startup-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+      .startup-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: #d9efe4; background: #1d5545; font-size: 12px; }
+      .startup-main { display: grid; place-items: center; color: #89918c; font-size: 14px; }
+      .startup-inspector { border-left: 1px solid #e8ebe7; }
+      @media (prefers-color-scheme: dark) {
+        :root { color-scheme: dark; background: #171c24; color: #edf1f7; }
+        .startup-screen { background: #171c24; }
+        .startup-sidebar, .startup-inspector { background: #1d2430; }
+        .startup-sidebar { border-color: #303a49; }
+        .startup-inspector { border-color: #303a49; }
+        .startup-main { color: #8995a6; }
+      }
+    </style>
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="startup-screen" role="status" aria-label="R2 List">
+        <aside class="startup-sidebar"><div class="startup-brand"><span class="startup-mark">R2</span><span>R2 List</span></div></aside>
+        <main class="startup-main">正在启动…</main>
+        <aside class="startup-inspector"></aside>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
