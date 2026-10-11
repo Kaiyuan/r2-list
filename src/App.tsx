@@ -1,8 +1,8 @@
 import { useEffect, useState, type CSSProperties, type FormEvent, type MouseEvent } from "react";
 import {
-  Archive, ArrowDownToLine, ArrowLeft, Check, ChevronDown, ChevronRight, Cloud, Copy,
+  Archive, ArrowDownToLine, ArrowLeft, Check, ChevronDown, ChevronRight, Cloud, Copy, LayoutGrid,
   File, FileAudio, FileCode2, FileImage, FileText, Film, Folder, FolderPlus, HardDrive, Image, MoreHorizontal,
-  Languages, Moon, Plus, Search, Settings2, ShieldCheck, Sun, Trash2, Upload, X,
+  Languages, List, Moon, Plus, Search, Settings2, ShieldCheck, Sun, Trash2, Upload, X,
 } from "lucide-react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -72,6 +72,7 @@ function App() {
   const [selectedPath, setSelectedPath] = useState("");
   const [loadingDirectory, setLoadingDirectory] = useState(true);
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "thumbnails">("list");
   const [directoryConfigs, setDirectoryConfigs] = useState<DirectoryConfig[]>([]);
   const [activeDirectory, setActiveDirectory] = useState("");
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -265,6 +266,11 @@ function App() {
     setDraftRules(rules);
     setSettingsOpen(true);
   }
+  function getThumbnailUrl(entry: Entry): string {
+    const pathSeparator = rootPath.includes("\\") ? "\\" : "/";
+    const separator = rootPath.endsWith("\\") || rootPath.endsWith("/") ? "" : pathSeparator;
+    return convertFileSrc(`${rootPath}${separator}${entry.path.replace(/\//g, pathSeparator)}`);
+  }
   function openGithubProject() {
     void openUrl(GITHUB_REPO_URL);
   }
@@ -413,12 +419,12 @@ function App() {
         <div className="workspace-heading"><div><div className="eyebrow"><span className="eyebrow-line" />{t("localDirectory")} <span className="muted-separator">/</span> {t("urlMapped")}</div><h1>{pathParts[pathParts.length - 1] ?? rootPath.split(/[\\/]/).filter(Boolean).pop() ?? t("mediaLibrary")}</h1><p className="workspace-path"><HardDrive size={13} /> {rootPath || t("chooseFolder")} <span className="path-dot">·</span> {formatItemCount(locale, visibleEntries.length)}</p></div>
           <div className="heading-actions"><button className="button-secondary" onClick={openRules}><Settings2 size={15} /> {t("urlRules")}</button><button className="button-primary" onClick={() => void chooseFiles()}><Upload size={15} /> {t("addFiles")}</button></div>
         </div>
-        <div className="toolbar"><div className="search-box"><Search size={16} /><input aria-label={t("searchAria")} value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder={t("searchPlaceholder")} /><kbd>⌘ F</kbd></div><div className="toolbar-spacer" /><button className="toolbar-button" onClick={() => setNewFolderOpen(true)}><FolderPlus size={16} /><span>{t("newFolder")}</span></button><span className="toolbar-divider" /><button className="icon-button" aria-label={t("sortByName")} title={t("sortByName")}><ChevronDown size={16} /></button><button className="icon-button" aria-label={t("aboutApp")} title={t("aboutApp")} onClick={() => setAboutOpen(true)}><MoreHorizontal size={17} /></button></div>
+        <div className="toolbar"><div className="search-box"><Search size={16} /><input aria-label={t("searchAria")} value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder={t("searchPlaceholder")} /><kbd>⌘ F</kbd></div><div className="toolbar-spacer" /><div className="view-toggle" role="group" aria-label={t("viewOptions")}><button className={`icon-button ${viewMode === "list" ? "active" : ""}`} aria-label={t("listView")} title={t("listView")} aria-pressed={viewMode === "list"} onClick={() => setViewMode("list")}><List size={16} /></button><button className={`icon-button ${viewMode === "thumbnails" ? "active" : ""}`} aria-label={t("thumbnailView")} title={t("thumbnailView")} aria-pressed={viewMode === "thumbnails"} onClick={() => setViewMode("thumbnails")}><LayoutGrid size={16} /></button></div><button className="toolbar-button" onClick={() => setNewFolderOpen(true)}><FolderPlus size={16} /><span>{t("newFolder")}</span></button><span className="toolbar-divider" /><button className="icon-button" aria-label={t("sortByName")} title={t("sortByName")}><ChevronDown size={16} /></button><button className="icon-button" aria-label={t("aboutApp")} title={t("aboutApp")} onClick={() => setAboutOpen(true)}><MoreHorizontal size={17} /></button></div>
         <div className="file-table-wrap">{currentPath && <button className="back-row" onClick={() => void navigateTo(parentPath(currentPath))}><ArrowLeft size={14} /> {t("back")}</button>}
-          <div className="table-header"><span>{t("name")}</span><span>{t("size")}</span><span>{t("modified")}</span><span /></div>
-          {loadingDirectory ? <div className="empty-state"><HardDrive size={20} /><span>{t("loadingDirectory")}</span></div> : visibleEntries.length ? visibleEntries.map((entry, index) => <button className={`file-row ${selectedPath === entry.path ? "selected" : ""}`} key={entry.path} onClick={() => openEntry(entry)} onDoubleClick={() => { if (entry.kind === "directory") openEntry(entry); else { setSelectedPath(entry.path); setPreviewEntry(entry); } }} onContextMenu={(event) => openContextMenu(event, entry)} style={{ "--row-index": index } as CSSProperties}>
+          {viewMode === "list" && <div className="table-header"><span>{t("name")}</span><span>{t("size")}</span><span>{t("modified")}</span><span /></div>}
+          {loadingDirectory ? <div className="empty-state"><HardDrive size={20} /><span>{t("loadingDirectory")}</span></div> : visibleEntries.length ? viewMode === "list" ? visibleEntries.map((entry, index) => <button className={`file-row ${selectedPath === entry.path ? "selected" : ""}`} key={entry.path} onClick={() => openEntry(entry)} onDoubleClick={() => { if (entry.kind === "directory") openEntry(entry); else { setSelectedPath(entry.path); setPreviewEntry(entry); } }} onContextMenu={(event) => openContextMenu(event, entry)} style={{ "--row-index": index } as CSSProperties}>
             <span className="file-name-cell"><EntryIcon kind={entry.kind} /><span className="file-name-copy"><strong>{entry.name}</strong>{entry.kind === "directory" && <small>{t("directory")}</small>}</span>{entry.kind === "directory" && <ChevronRight className="row-chevron" size={15} />}</span><span className="file-meta">{entry.kind === "directory" ? "—" : formatBytes(entry.sizeBytes)}</span><span className="file-meta modified-meta">{formatModified(entry.modifiedMs, locale)}</span><span className="row-menu" onClick={(event) => { event.stopPropagation(); openContextMenu(event, entry); }}><MoreHorizontal size={16} /></span>
-          </button>) : <div className="empty-state"><Search size={20} /><strong>{t("noMatches")}</strong><span>{t("tryKeywords")}</span></div>}
+          </button>) : <div className="thumbnail-grid">{visibleEntries.map((entry, index) => <button className={`thumbnail-card ${selectedPath === entry.path ? "selected" : ""}`} key={entry.path} onClick={() => openEntry(entry)} onDoubleClick={() => { if (entry.kind === "directory") openEntry(entry); else { setSelectedPath(entry.path); setPreviewEntry(entry); } }} onContextMenu={(event) => openContextMenu(event, entry)} style={{ "--row-index": index } as CSSProperties}><span className="thumbnail-image">{entry.kind === "image" ? <><EntryIcon kind={entry.kind} size={30} /><img src={getThumbnailUrl(entry)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = "none"; }} /></> : <EntryIcon kind={entry.kind} size={34} />}</span><span className="thumbnail-name" title={entry.name}>{entry.name}</span><span className="thumbnail-meta">{entry.kind === "directory" ? t("directory") : formatBytes(entry.sizeBytes)}</span></button>)}</div> : <div className="empty-state"><Search size={20} /><strong>{t("noMatches")}</strong><span>{t("tryKeywords")}</span></div>}
           {rootPath && <div className="table-footnote"><span className="footnote-dot" />{rootPath}{currentPath ? `/${currentPath}` : ""}</div>}
         </div>
         <footer className="statusbar"><span><span className="status-indicator" />{rootPath ? t("localDirectoryActive") : t("chooseFolder")}</span><span>R2 URL <strong>{rules.baseUrl.replace(/^https?:\/\//, "")}</strong></span></footer>

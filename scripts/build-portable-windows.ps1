@@ -14,6 +14,11 @@ if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
 
 npm.cmd ci
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$generatedIcons = Join-Path $env:TEMP "r2-list-generated-icons"
+New-Item -ItemType Directory -Force -Path $generatedIcons | Out-Null
+npm.cmd run tauri -- icon src-tauri/icons/icon.png --output $generatedIcons
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Copy-Item -LiteralPath (Join-Path $generatedIcons "icon.ico") -Destination (Join-Path $repositoryRoot "src-tauri\icons\icon.ico") -Force
 npm.cmd run tauri build -- --no-bundle
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
