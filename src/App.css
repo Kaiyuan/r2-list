@@ -83,6 +83,15 @@ body *, *::before, *::after { font-family: inherit; line-height: inherit; }
 .app-shell h3 { font-size: 16px !important; }
 .location-entry { display: flex; align-items: center; gap: 2px; margin: 2px 0; border-radius: 6px; }
 .location-entry.active, .location-entry:hover { background: var(--panel-soft); }
+.locations-section { position: relative; }
+.location-add-menu { position: absolute; z-index: 12; top: 34px; right: 0; width: min(230px, calc(100vw - 48px)); padding: 5px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); box-shadow: var(--shadow); animation: menu-in .12s ease-out both; }
+.location-add-menu button { width: 100%; min-height: 38px; display: flex; align-items: center; gap: 10px; padding: 7px 9px; border: 0; border-radius: 4px; color: var(--ink-soft); background: transparent; text-align: left; cursor: pointer; }
+.location-add-menu button:hover { color: var(--accent-strong); background: var(--accent-soft); }
+.location-add-menu button svg { flex: 0 0 auto; color: var(--muted); }
+.network-modal { max-height: min(90vh, 760px); overflow-y: auto; }
+.network-modal .field-label { margin-block: 12px; line-height: 1.45; }
+.network-modal .field-label input { min-height: 40px; height: auto; padding-block: 7px; font-family: inherit; font-size: 13px; line-height: 1.4; }
+.network-modal .field-label input[type="password"], .network-modal .field-label input[autocomplete="username"] { font-family: inherit; }
 .location-entry .location-item { min-width: 0; flex: 1; margin: 0; }
 .location-entry.active .location-item { background: transparent; }
 .location-action { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 5px; color: var(--muted); background: transparent; opacity: 0; cursor: pointer; }

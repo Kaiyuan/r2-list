@@ -19,7 +19,8 @@ type EntryKind = "directory" | "image" | "video" | "audio" | "text" | "document"
 type Entry = { path: string; name: string; kind: EntryKind; sizeBytes: number; modifiedMs: number; extension: string };
 type DirectoryListing = { rootPath: string; currentPath: string; entries: Entry[] };
 type PreviewData = { mimeType: string; dataBase64: string; sizeBytes: number };
-type DirectoryConfig = { path: string; rules: UrlRules };
+type DirectoryConfig = { path: string; rules: UrlRules; kind?: "local" | "smb" | "webdav"; label?: string; endpoint?: string; share?: string; username?: string; workgroup?: string };
+type NetworkDraft = { kind: "smb" | "webdav"; endpoint: string; share: string; username: string; workgroup: string; password: string };
 type UserConfig = { directories: DirectoryConfig[]; activeDirectory: string | null; locale: Locale | null; theme: ThemePreference | null };
 type MenuState = { x: number; y: number; entry: Entry } | null;
 type UpdateStatus = { status: "checking" | "up-to-date" | "update-available" | "error"; latest: string | null; message: string };
@@ -65,6 +66,25 @@ function EntryIcon({ kind, size = 18 }: { kind: EntryKind; size?: number }) {
   return <File size={size} className="entry-icon" />;
 }
 
+function RemoteThumbnail({ path }: { path: string }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    let active = true;
+    let objectUrl = "";
+    void invoke<PreviewData>("read_remote_preview", { path }).then((preview) => {
+      const binary = atob(preview.dataBase64);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      objectUrl = URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: preview.mimeType }));
+      if (active) setUrl(objectUrl);
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [path]);
+  return url ? <img src={url} alt="" loading="lazy" /> : null;
+}
+
 function App() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [rootPath, setRootPath] = useState("");
@@ -73,6 +93,9 @@ function App() {
   const [loadingDirectory, setLoadingDirectory] = useState(true);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "thumbnails">("list");
+  const [locationMenuOpen, setLocationMenuOpen] = useState(false);
+  const [networkOpen, setNetworkOpen] = useState(false);
+  const [networkDraft, setNetworkDraft] = useState<NetworkDraft>({ kind: "smb", endpoint: "", share: "", username: "", workgroup: "", password: "" });
   const [directoryConfigs, setDirectoryConfigs] = useState<DirectoryConfig[]>([]);
   const [activeDirectory, setActiveDirectory] = useState("");
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -224,6 +247,30 @@ function App() {
     setPreviewUrl(null);
     setPreviewError("");
     setPreviewLoading(true);
+    const isRemote = directoryConfigs.some((directory) => directory.path === activeDirectory && directory.kind && directory.kind !== "local");
+    if (isRemote) {
+      if (target.kind === "file" || target.kind === "archive") {
+        setPreviewLoading(false);
+        return () => { active = false; };
+      }
+      void invoke<PreviewData>("read_remote_preview", { path: target.path }).then((result) => {
+        const binary = atob(result.dataBase64);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        objectUrl = URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: result.mimeType }));
+        if (active) {
+          setPreviewBytes(bytes);
+          setPreviewUrl(objectUrl);
+        }
+      }).catch((error: unknown) => {
+        if (active) setPreviewError(`${t("previewLoadFailed")}: ${String(error)}`);
+      }).finally(() => {
+        if (active) setPreviewLoading(false);
+      });
+      return () => {
+        active = false;
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      };
+    }
     const pathSeparator = rootPath.includes("\\") ? "\\" : "/";
     const separator = rootPath.endsWith("\\") || rootPath.endsWith("/") ? "" : pathSeparator;
     const absolutePath = `${rootPath}${separator}${target.path.replace(/\//g, "\\")}`;
@@ -253,7 +300,7 @@ function App() {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [selectedPath, entries, rootPath]);
+  }, [selectedPath, entries, rootPath, directoryConfigs, activeDirectory]);
 
   const visibleEntries = entries
     .filter((entry) => entry.name.toLowerCase().includes(search.toLowerCase()))
@@ -271,18 +318,35 @@ function App() {
     const separator = rootPath.endsWith("\\") || rootPath.endsWith("/") ? "" : pathSeparator;
     return convertFileSrc(`${rootPath}${separator}${entry.path.replace(/\//g, pathSeparator)}`);
   }
+  function openNetworkForm(kind: "smb" | "webdav", config?: DirectoryConfig) {
+    setNetworkDraft({
+      kind,
+      endpoint: config?.endpoint ?? "",
+      share: config?.share ?? "",
+      username: config?.username ?? "",
+      workgroup: config?.workgroup ?? "",
+      password: "",
+    });
+    setLocationMenuOpen(false);
+    setNetworkOpen(true);
+  }
   function openGithubProject() {
     void openUrl(GITHUB_REPO_URL);
   }
   async function loadDirectory(path: string) {
+    const savedNetwork = directoryConfigs.find((directory) => directory.path === path && directory.kind && directory.kind !== "local");
+    if (savedNetwork) {
+      openNetworkForm(savedNetwork.kind as "smb" | "webdav", savedNetwork);
+      return;
+    }
     setLoadingDirectory(true);
     try {
       const listing = await invoke<DirectoryListing>("open_directory", { path });
       setRootPath(listing.rootPath);
       setActiveDirectory(listing.rootPath);
       setDirectoryConfigs((current) => current.some((directory) => directory.path === listing.rootPath)
-        ? current
-        : [...current, { path: listing.rootPath, rules: initialRules }]);
+        ? current.map((directory) => directory.path === listing.rootPath ? { ...directory, kind: "local" } : directory)
+        : [...current, { path: listing.rootPath, kind: "local", label: listing.rootPath.split(/[\\/]/).filter(Boolean).pop() ?? listing.rootPath, rules: initialRules }]);
       setCurrentPath(listing.currentPath);
       setEntries(listing.entries);
       setSelectedPath(listing.entries.find((entry) => entry.kind !== "directory")?.path ?? "");
@@ -299,6 +363,36 @@ function App() {
       const selected = await openDialog({ directory: true, multiple: false });
       if (typeof selected === "string") await loadDirectory(selected);
     } catch (error) { setToast(`${t("directoryLoadFailed")}: ${String(error)}`); }
+  }
+  async function connectRemote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoadingDirectory(true);
+    try {
+      const listing = await invoke<DirectoryListing>("connect_remote_directory", {
+        protocol: networkDraft.kind,
+        endpoint: networkDraft.endpoint,
+        share: networkDraft.share,
+        username: networkDraft.username,
+        password: networkDraft.password,
+        workgroup: networkDraft.workgroup,
+      });
+      setRootPath(listing.rootPath);
+      setActiveDirectory(listing.rootPath);
+      setCurrentPath(listing.currentPath);
+      setEntries(listing.entries);
+      setSelectedPath(listing.entries.find((entry) => entry.kind !== "directory")?.path ?? "");
+      setSearch("");
+      setDirectoryConfigs((current) => current.some((directory) => directory.path === listing.rootPath)
+        ? current.map((directory) => directory.path === listing.rootPath ? { ...directory, kind: networkDraft.kind, label: networkDraft.kind === "smb" ? `${networkDraft.endpoint}/${networkDraft.share}` : networkDraft.endpoint, endpoint: networkDraft.endpoint, share: networkDraft.share, username: networkDraft.username, workgroup: networkDraft.workgroup } : directory)
+        : [...current, { path: listing.rootPath, kind: networkDraft.kind, label: networkDraft.kind === "smb" ? `${networkDraft.endpoint}/${networkDraft.share}` : networkDraft.endpoint, endpoint: networkDraft.endpoint, share: networkDraft.share, username: networkDraft.username, workgroup: networkDraft.workgroup, rules: initialRules }]);
+      setNetworkOpen(false);
+      setNetworkDraft((draft) => ({ ...draft, password: "" }));
+      setToast(t("networkConnected"));
+    } catch (error) {
+      setToast(`${t("directoryLoadFailed")}: ${String(error)}`);
+    } finally {
+      setLoadingDirectory(false);
+    }
   }
   async function removeDirectory(path: string) {
     const remaining = directoryConfigs.filter((directory) => directory.path !== path);
@@ -319,7 +413,8 @@ function App() {
   async function navigateTo(path: string) {
     setLoadingDirectory(true);
     try {
-      const listing = await invoke<DirectoryListing>("read_directory", { path });
+      const isRemote = directoryConfigs.some((directory) => directory.path === activeDirectory && directory.kind && directory.kind !== "local");
+      const listing = await invoke<DirectoryListing>(isRemote ? "read_remote_directory" : "read_directory", { path });
       setCurrentPath(listing.currentPath);
       setEntries(listing.entries);
       setSelectedPath(listing.entries.find((entry) => entry.kind !== "directory")?.path ?? "");
@@ -333,7 +428,8 @@ function App() {
       const selected = await openDialog({ multiple: true });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
-      const listing = await invoke<DirectoryListing>("import_files", { paths, directory: currentPath });
+      const isRemote = directoryConfigs.some((directory) => directory.path === activeDirectory && directory.kind && directory.kind !== "local");
+      const listing = await invoke<DirectoryListing>(isRemote ? "import_remote_files" : "import_files", { paths, directory: currentPath });
       setEntries(listing.entries);
       setToast(t("filesAdded", { count: paths.length }));
     } catch (error) { setToast(`${t("directoryLoadFailed")}: ${String(error)}`); }
@@ -341,7 +437,8 @@ function App() {
   async function createFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      const listing = await invoke<DirectoryListing>("create_directory", { path: currentPath, name: newFolderName });
+      const isRemote = directoryConfigs.some((directory) => directory.path === activeDirectory && directory.kind && directory.kind !== "local");
+      const listing = await invoke<DirectoryListing>(isRemote ? "create_remote_directory" : "create_directory", { path: currentPath, name: newFolderName });
       setEntries(listing.entries);
       setNewFolderName("");
       setNewFolderOpen(false);
@@ -403,9 +500,10 @@ function App() {
       <aside className="sidebar">
         <div className="brand-lockup"><div className="brand-mark"><Cloud size={19} strokeWidth={2.3} /></div><div><strong>R2 List</strong><span>{t("objectWorkspace")}</span></div><button className="icon-button sidebar-more" aria-label={t("aboutApp")} title={t("aboutApp")} onClick={() => setAboutOpen(true)}><MoreHorizontal size={18} /></button></div>
         <div className="sidebar-section"><div className="section-label">{t("workspace")}</div><button className="nav-item active"><HardDrive size={17} /><span>{t("files")}</span><span className="nav-count">{entries.length}</span></button><button className="nav-item" onClick={openRules}><Settings2 size={17} /><span>{t("urlRules")}</span></button></div>
-        <div className="sidebar-section locations-section"><div className="section-heading"><span className="section-label">{t("locations")}</span><button className="icon-button tiny" aria-label={t("addLocation")} title={t("addLocation")} onClick={() => void chooseDirectory()}><Plus size={15} /></button></div>
-          {directoryConfigs.map((directory) => <div className={`location-entry ${directory.path === activeDirectory ? "active" : ""}`} key={directory.path}><button className="location-item" onClick={() => void loadDirectory(directory.path)}><span className="location-dot local-dot" /><span className="location-copy"><strong>{directory.path.split(/[\\/]/).filter(Boolean).pop()}</strong><small>{directory.path}</small></span></button><button className="location-action" aria-label={t("removeLocation")} title={t("removeLocation")} onClick={() => void removeDirectory(directory.path)}><Trash2 size={15} /></button></div>)}
-          <button className="add-location" onClick={() => void chooseDirectory()}><Plus size={14} /> {t("addLocation")}</button>
+        <div className="sidebar-section locations-section"><div className="section-heading"><span className="section-label">{t("locations")}</span><button className="icon-button tiny" aria-label={t("addLocation")} title={t("addLocation")} onClick={() => setLocationMenuOpen((open) => !open)}><Plus size={15} /></button></div>
+          {locationMenuOpen && <div className="location-add-menu"><button onClick={() => { setLocationMenuOpen(false); void chooseDirectory(); }}><HardDrive size={16} /><span>{t("localFolderOption")}</span></button><button onClick={() => openNetworkForm("smb")}><Cloud size={16} /><span>{t("smbOption")}</span></button><button onClick={() => openNetworkForm("webdav")}><Cloud size={16} /><span>{t("webdavOption")}</span></button></div>}
+          {directoryConfigs.map((directory) => <div className={`location-entry ${directory.path === activeDirectory ? "active" : ""}`} key={directory.path}><button className="location-item" onClick={() => void loadDirectory(directory.path)}><span className={`location-dot ${directory.kind && directory.kind !== "local" ? "remote-dot" : "local-dot"}`} /><span className="location-copy"><strong>{directory.label || directory.path.split(/[\\/]/).filter(Boolean).pop()}</strong><small>{directory.kind && directory.kind !== "local" ? directory.kind.toUpperCase() : directory.path}</small></span></button><button className="location-action" aria-label={t("removeLocation")} title={t("removeLocation")} onClick={() => void removeDirectory(directory.path)}><Trash2 size={15} /></button></div>)}
+          <button className="add-location" onClick={() => setLocationMenuOpen((open) => !open)}><Plus size={14} /> {t("addLocation")}</button>
         </div>
         <div className="sidebar-bottom"><div className="sync-note"><span className="note-icon"><ShieldCheck size={15} /></span><span><strong>{t("urlOnly")}</strong><small>{t("externalSync")}</small></span></div>
           <div className="profile-button"><span className="avatar">R</span><span className="profile-copy"><strong>R2 List</strong><small>{t("personalWorkspace")}</small></span></div>
@@ -424,7 +522,7 @@ function App() {
           {viewMode === "list" && <div className="table-header"><span>{t("name")}</span><span>{t("size")}</span><span>{t("modified")}</span><span /></div>}
           {loadingDirectory ? <div className="empty-state"><HardDrive size={20} /><span>{t("loadingDirectory")}</span></div> : visibleEntries.length ? viewMode === "list" ? visibleEntries.map((entry, index) => <button className={`file-row ${selectedPath === entry.path ? "selected" : ""}`} key={entry.path} onClick={() => openEntry(entry)} onDoubleClick={() => { if (entry.kind === "directory") openEntry(entry); else { setSelectedPath(entry.path); setPreviewEntry(entry); } }} onContextMenu={(event) => openContextMenu(event, entry)} style={{ "--row-index": index } as CSSProperties}>
             <span className="file-name-cell"><EntryIcon kind={entry.kind} /><span className="file-name-copy"><strong>{entry.name}</strong>{entry.kind === "directory" && <small>{t("directory")}</small>}</span>{entry.kind === "directory" && <ChevronRight className="row-chevron" size={15} />}</span><span className="file-meta">{entry.kind === "directory" ? "—" : formatBytes(entry.sizeBytes)}</span><span className="file-meta modified-meta">{formatModified(entry.modifiedMs, locale)}</span><span className="row-menu" onClick={(event) => { event.stopPropagation(); openContextMenu(event, entry); }}><MoreHorizontal size={16} /></span>
-          </button>) : <div className="thumbnail-grid">{visibleEntries.map((entry, index) => <button className={`thumbnail-card ${selectedPath === entry.path ? "selected" : ""}`} key={entry.path} onClick={() => openEntry(entry)} onDoubleClick={() => { if (entry.kind === "directory") openEntry(entry); else { setSelectedPath(entry.path); setPreviewEntry(entry); } }} onContextMenu={(event) => openContextMenu(event, entry)} style={{ "--row-index": index } as CSSProperties}><span className="thumbnail-image">{entry.kind === "image" ? <><EntryIcon kind={entry.kind} size={30} /><img src={getThumbnailUrl(entry)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = "none"; }} /></> : <EntryIcon kind={entry.kind} size={34} />}</span><span className="thumbnail-name" title={entry.name}>{entry.name}</span><span className="thumbnail-meta">{entry.kind === "directory" ? t("directory") : formatBytes(entry.sizeBytes)}</span></button>)}</div> : <div className="empty-state"><Search size={20} /><strong>{t("noMatches")}</strong><span>{t("tryKeywords")}</span></div>}
+          </button>) : <div className="thumbnail-grid">{visibleEntries.map((entry, index) => { const isRemote = directoryConfigs.some((directory) => directory.path === activeDirectory && directory.kind && directory.kind !== "local"); return <button className={`thumbnail-card ${selectedPath === entry.path ? "selected" : ""}`} key={entry.path} onClick={() => openEntry(entry)} onDoubleClick={() => { if (entry.kind === "directory") openEntry(entry); else { setSelectedPath(entry.path); setPreviewEntry(entry); } }} onContextMenu={(event) => openContextMenu(event, entry)} style={{ "--row-index": index } as CSSProperties}><span className="thumbnail-image">{entry.kind === "image" ? <><EntryIcon kind={entry.kind} size={30} />{isRemote ? <RemoteThumbnail path={entry.path} /> : <img src={getThumbnailUrl(entry)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = "none"; }} />}</> : <EntryIcon kind={entry.kind} size={34} />}</span><span className="thumbnail-name" title={entry.name}>{entry.name}</span><span className="thumbnail-meta">{entry.kind === "directory" ? t("directory") : formatBytes(entry.sizeBytes)}</span></button>; })}</div> : <div className="empty-state"><Search size={20} /><strong>{t("noMatches")}</strong><span>{t("tryKeywords")}</span></div>}
           {rootPath && <div className="table-footnote"><span className="footnote-dot" />{rootPath}{currentPath ? `/${currentPath}` : ""}</div>}
         </div>
         <footer className="statusbar"><span><span className="status-indicator" />{rootPath ? t("localDirectoryActive") : t("chooseFolder")}</span><span>R2 URL <strong>{rules.baseUrl.replace(/^https?:\/\//, "")}</strong></span></footer>
@@ -446,6 +544,7 @@ function App() {
 
       {previewEntry && <div className="file-preview-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setPreviewEntry(null)}><section className="file-preview-modal" role="dialog" aria-modal="true" aria-label={`${t("preview")}: ${previewEntry.name}`}><header className="file-preview-header"><div className="file-preview-heading"><span className="section-label">{t("preview")}</span><h2>{previewEntry.name}</h2></div><button className="icon-button" aria-label={t("close")} title={t("close")} onClick={() => setPreviewEntry(null)}><X size={18} /></button></header><div className="file-preview-content"><PreviewContent entry={previewEntry} bytes={previewBytes} objectUrl={previewUrl} loading={previewLoading} error={previewError} t={t} /></div><footer className="file-preview-footer"><span>{previewEntry.extension.toUpperCase() || "FILE"}</span><span>{formatBytes(previewEntry.sizeBytes)}</span></footer></section></div>}
       {menu && <div className="context-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}><div className="context-title">{t("copyLinks")} <span>{menu.entry.kind === "directory" ? t("directory") : t("file")}</span></div><button onClick={() => copyLinks(menu.entry, "url")}><Copy size={15} /><span>{t("plainTextUrl")}</span><kbd>TXT</kbd></button><button onClick={() => copyLinks(menu.entry, "markdown")}><FileText size={15} /><span>{t("markdown")}</span><kbd>MD</kbd></button><button onClick={() => copyLinks(menu.entry, "html")}><Archive size={15} /><span>{t("htmlLinks")}</span><kbd>HTML</kbd></button>{menu.entry.kind === "directory" && <div className="context-hint">{t("recursiveCopyHint")}</div>}</div>}
+      {networkOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setNetworkOpen(false)}><form className="settings-modal network-modal" onSubmit={connectRemote}><div className="modal-heading"><div><span className="section-label">{t("locations")}</span><h2>{networkDraft.kind === "smb" ? t("connectSmb") : t("connectWebdav")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setNetworkOpen(false)}><X size={18} /></button></div><label className="field-label">{t("serverAddress")}<input autoFocus required value={networkDraft.endpoint} onChange={(event) => setNetworkDraft({ ...networkDraft, endpoint: event.currentTarget.value })} placeholder={networkDraft.kind === "smb" ? "smb://server.example.com" : "https://dav.example.com/remote.php/dav/files/user"} /></label>{networkDraft.kind === "smb" && <><label className="field-label">{t("shareName")}<input required value={networkDraft.share} onChange={(event) => setNetworkDraft({ ...networkDraft, share: event.currentTarget.value })} placeholder="shared-folder" /></label><label className="field-label">{t("workgroup")}<input value={networkDraft.workgroup} onChange={(event) => setNetworkDraft({ ...networkDraft, workgroup: event.currentTarget.value })} /></label></>}<label className="field-label">{t("username")}<input autoComplete="username" value={networkDraft.username} onChange={(event) => setNetworkDraft({ ...networkDraft, username: event.currentTarget.value })} /></label><label className="field-label">{t("password")}<input type="password" autoComplete="current-password" value={networkDraft.password} onChange={(event) => setNetworkDraft({ ...networkDraft, password: event.currentTarget.value })} /></label><div className="modal-actions"><button type="button" className="button-secondary" onClick={() => setNetworkOpen(false)}>{t("cancel")}</button><button className="button-primary" type="submit" disabled={loadingDirectory}><Cloud size={15} />{t("connect")}</button></div></form></div>}
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSettingsOpen(false)}><form className="settings-modal" onSubmit={saveRules}>
         <div className="modal-heading"><div><span className="section-label">{t("linkConfiguration")}</span><h2>{t("rulesTitle")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
         <p className="modal-description">{t("rulesDescription")}</p>

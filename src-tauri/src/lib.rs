@@ -1,21 +1,63 @@
 use std::{
     fs,
+    io::Cursor,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Mutex, OnceLock},
     time::UNIX_EPOCH,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use remotefs::{
+    RemoteFs,
+    fs::{ReadOptions, WriteOptions},
+};
+use remotefs_smb::{SmbCredentials, SmbFs, SmbOptions};
+use remotefs_webdav::{Auth, WebDAVFs};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 #[derive(Default)]
 struct LocalDirectory(Mutex<Option<PathBuf>>);
 
+#[derive(Default)]
+struct RemoteDirectory(Mutex<Option<RemoteConnection>>);
+
+struct RemoteConnection {
+    id: String,
+    client: Box<dyn RemoteFs>,
+}
+
+fn remote_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    if let Some(runtime) = RUNTIME.get() {
+        return Ok(runtime);
+    }
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())?;
+    let _ = RUNTIME.set(runtime);
+    RUNTIME
+        .get()
+        .ok_or_else(|| "Could not start network runtime".to_string())
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DirectoryConfig {
     path: String,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    label: String,
+    #[serde(default)]
+    endpoint: String,
+    #[serde(default)]
+    share: String,
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    workgroup: String,
     #[serde(default)]
     rules: UrlRulesConfig,
 }
@@ -155,6 +197,72 @@ fn display_path(path: &Path) -> String {
     value.into_owned()
 }
 
+fn remote_absolute_path(relative: &str) -> Result<PathBuf, String> {
+    let mut path = PathBuf::from("/");
+    for component in relative.split('/') {
+        if component.is_empty() {
+            continue;
+        }
+        if component == "." || component == ".." || component.contains('\\') {
+            return Err("Invalid remote path".to_string());
+        }
+        path.push(component);
+    }
+    Ok(path)
+}
+
+fn remote_listing(
+    client: &dyn RemoteFs,
+    root_id: &str,
+    current_path: &str,
+) -> Result<DirectoryListing, String> {
+    let current = remote_absolute_path(current_path)?;
+    let mut entries = client
+        .list_dir(&current)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|entry| {
+            let relative_path = entry
+                .path()
+                .strip_prefix("/")
+                .unwrap_or(entry.path())
+                .to_string_lossy()
+                .replace('\\', "/");
+            let extension = entry.extension().unwrap_or_default().to_ascii_lowercase();
+            let modified_ms = entry
+                .metadata()
+                .modified
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .map(|value| value.as_millis().min(u64::MAX as u128) as u64)
+                .unwrap_or_default();
+            DirectoryEntry {
+                path: relative_path,
+                name: entry.name(),
+                kind: if entry.is_dir() {
+                    "directory"
+                } else {
+                    file_kind(&extension)
+                }
+                .to_string(),
+                size_bytes: entry.metadata().size.unwrap_or_default(),
+                modified_ms,
+                extension,
+            }
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        right
+            .kind
+            .cmp(&left.kind)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+    Ok(DirectoryListing {
+        root_path: root_id.to_string(),
+        current_path: current_path.to_string(),
+        entries,
+    })
+}
+
 fn resolve_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
     let relative = Path::new(relative_path);
     if relative.is_absolute() {
@@ -258,11 +366,19 @@ fn app_version() -> &'static str {
 }
 
 #[tauri::command]
-fn clear_directory(state: State<'_, LocalDirectory>) -> Result<(), String> {
+fn clear_directory(
+    state: State<'_, LocalDirectory>,
+    remote: State<'_, RemoteDirectory>,
+) -> Result<(), String> {
     *state
         .0
         .lock()
         .map_err(|_| "Directory state unavailable".to_string())? = None;
+    remote
+        .0
+        .lock()
+        .map_err(|_| "Remote directory state unavailable".to_string())?
+        .take();
     Ok(())
 }
 
@@ -271,6 +387,7 @@ fn open_directory(
     path: String,
     app: AppHandle,
     state: State<'_, LocalDirectory>,
+    remote: State<'_, RemoteDirectory>,
 ) -> Result<DirectoryListing, String> {
     let root = fs::canonicalize(path).map_err(|error| error.to_string())?;
     if !root.is_dir() {
@@ -283,11 +400,232 @@ fn open_directory(
         .0
         .lock()
         .map_err(|_| "Directory state unavailable".to_string())? = Some(root.clone());
+    remote
+        .0
+        .lock()
+        .map_err(|_| "Remote directory state unavailable".to_string())?
+        .take();
     let entries = list_directory(&root, &root)?;
     Ok(DirectoryListing {
         root_path: display_path(&root),
         current_path: String::new(),
         entries,
+    })
+}
+
+#[tauri::command]
+fn connect_remote_directory(
+    protocol: String,
+    endpoint: String,
+    share: String,
+    username: String,
+    password: String,
+    workgroup: String,
+    state: State<'_, RemoteDirectory>,
+    local: State<'_, LocalDirectory>,
+) -> Result<DirectoryListing, String> {
+    let endpoint = endpoint.trim().trim_end_matches('/').to_string();
+    if endpoint.is_empty() {
+        return Err("Enter a server address".to_string());
+    }
+    let runtime = remote_runtime()?;
+    let mut client: Box<dyn RemoteFs> = match protocol.as_str() {
+        "smb" => {
+            if share.trim().is_empty() {
+                return Err("Enter an SMB share name".to_string());
+            }
+            let credentials = SmbCredentials::default()
+                .server(&endpoint)
+                .share(&share)
+                .username(&username)
+                .password(&password);
+            let credentials = if workgroup.trim().is_empty() {
+                credentials
+            } else {
+                credentials.workgroup(workgroup.trim())
+            };
+            Box::new(
+                SmbFs::try_new(credentials, SmbOptions::default())
+                    .map_err(|error| error.to_string())?
+                    .into_blocking(runtime.handle().clone()),
+            )
+        }
+        "webdav" => {
+            let url = if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
+                endpoint.clone()
+            } else {
+                format!("https://{endpoint}")
+            };
+            Box::new(
+                WebDAVFs::new(&url, Auth::basic(&username, &password))
+                    .map_err(|error| error.to_string())?
+                    .into_blocking(runtime.handle().clone()),
+            )
+        }
+        _ => return Err("Unsupported network protocol".to_string()),
+    };
+    client.connect().map_err(|error| error.to_string())?;
+    let id = if protocol == "smb" {
+        format!(
+            "smb://{}/{}",
+            endpoint.trim_start_matches("smb://"),
+            share.trim_matches('/')
+        )
+    } else {
+        format!("webdav://{endpoint}")
+    };
+    let listing = remote_listing(client.as_ref(), &id, "")?;
+    *state
+        .0
+        .lock()
+        .map_err(|_| "Remote directory state unavailable".to_string())? =
+        Some(RemoteConnection { id, client });
+    *local
+        .0
+        .lock()
+        .map_err(|_| "Directory state unavailable".to_string())? = None;
+    Ok(listing)
+}
+
+#[tauri::command]
+fn read_remote_directory(
+    path: String,
+    state: State<'_, RemoteDirectory>,
+) -> Result<DirectoryListing, String> {
+    let connection = state
+        .0
+        .lock()
+        .map_err(|_| "Remote directory state unavailable".to_string())?;
+    let connection = connection
+        .as_ref()
+        .ok_or_else(|| "Connect to a network location first".to_string())?;
+    remote_listing(connection.client.as_ref(), &connection.id, &path)
+}
+
+#[tauri::command]
+fn create_remote_directory(
+    path: String,
+    name: String,
+    state: State<'_, RemoteDirectory>,
+) -> Result<DirectoryListing, String> {
+    let name = name.trim();
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+        return Err("Enter a valid folder name".to_string());
+    }
+    let connection = state
+        .0
+        .lock()
+        .map_err(|_| "Remote directory state unavailable".to_string())?;
+    let connection = connection
+        .as_ref()
+        .ok_or_else(|| "Connect to a network location first".to_string())?;
+    let target = remote_absolute_path(&path)?.join(name);
+    connection
+        .client
+        .create_dir(&target, None)
+        .map_err(|error| error.to_string())?;
+    remote_listing(connection.client.as_ref(), &connection.id, &path)
+}
+
+#[tauri::command]
+fn import_remote_files(
+    paths: Vec<String>,
+    directory: String,
+    state: State<'_, RemoteDirectory>,
+) -> Result<DirectoryListing, String> {
+    let connection = state
+        .0
+        .lock()
+        .map_err(|_| "Remote directory state unavailable".to_string())?;
+    let connection = connection
+        .as_ref()
+        .ok_or_else(|| "Connect to a network location first".to_string())?;
+    let target_directory = remote_absolute_path(&directory)?;
+    for source in paths {
+        let source = fs::canonicalize(source).map_err(|error| error.to_string())?;
+        if !source.is_file() {
+            return Err("Only files can be added to this directory".to_string());
+        }
+        let name = source
+            .file_name()
+            .ok_or_else(|| "The selected file has no name".to_string())?;
+        let mut target = target_directory.join(name);
+        let mut suffix = 2;
+        while connection
+            .client
+            .exists(&target)
+            .map_err(|error| error.to_string())?
+        {
+            let stem = source.file_stem().unwrap_or_default().to_string_lossy();
+            let extension = source.extension().map(|value| value.to_string_lossy());
+            let renamed = if let Some(extension) = extension {
+                format!("{stem} ({suffix}).{extension}")
+            } else {
+                format!("{stem} ({suffix})")
+            };
+            target = target_directory.join(renamed);
+            suffix += 1;
+        }
+        let bytes = fs::read(&source).map_err(|error| error.to_string())?;
+        connection
+            .client
+            .write_file(
+                &target,
+                &WriteOptions::default().size_hint(bytes.len() as u64),
+                &mut Cursor::new(bytes),
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    remote_listing(connection.client.as_ref(), &connection.id, &directory)
+}
+
+#[tauri::command]
+fn read_remote_preview(
+    path: String,
+    state: State<'_, RemoteDirectory>,
+) -> Result<PreviewData, String> {
+    const MAX_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
+    let connection = state
+        .0
+        .lock()
+        .map_err(|_| "Remote directory state unavailable".to_string())?;
+    let connection = connection
+        .as_ref()
+        .ok_or_else(|| "Connect to a network location first".to_string())?;
+    let path = remote_absolute_path(&path)?;
+    let metadata = connection
+        .client
+        .stat(&path)
+        .map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("The selected path is not a file".to_string());
+    }
+    let extension = metadata
+        .path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let preview_limit = match file_kind(&extension) {
+        "text" => 2 * 1024 * 1024,
+        "document" => 16 * 1024 * 1024,
+        _ => MAX_PREVIEW_BYTES,
+    };
+    if metadata.metadata().size.unwrap_or_default() > preview_limit {
+        return Err(format!(
+            "This file exceeds the {} MB preview limit",
+            preview_limit / 1024 / 1024
+        ));
+    }
+    let mut bytes = Vec::new();
+    connection
+        .client
+        .read_file(&path, &ReadOptions::default(), &mut bytes)
+        .map_err(|error| error.to_string())?;
+    Ok(PreviewData {
+        mime_type: mime_type(&extension).to_string(),
+        size_bytes: bytes.len() as u64,
+        data_base64: STANDARD.encode(bytes),
     })
 }
 
@@ -448,6 +786,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(LocalDirectory::default())
+        .manage(RemoteDirectory::default())
         .invoke_handler(tauri::generate_handler![
             default_directory,
             load_user_config,
@@ -455,6 +794,11 @@ pub fn run() {
             app_version,
             clear_directory,
             open_directory,
+            connect_remote_directory,
+            read_remote_directory,
+            create_remote_directory,
+            import_remote_files,
+            read_remote_preview,
             read_directory,
             create_directory,
             import_files,
@@ -466,7 +810,9 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{available_destination, file_kind, list_directory, resolve_path};
+    use super::{
+        available_destination, file_kind, list_directory, remote_absolute_path, resolve_path,
+    };
     use std::{
         fs,
         path::PathBuf,
@@ -503,6 +849,16 @@ mod tests {
         assert!(resolve_path(&root, "../outside").is_err());
         assert!(resolve_path(&root, outside.to_str().unwrap()).is_err());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn keeps_remote_paths_within_the_share_root() {
+        assert_eq!(
+            remote_absolute_path("photos/2026").unwrap(),
+            PathBuf::from("/photos/2026")
+        );
+        assert!(remote_absolute_path("../outside").is_err());
+        assert!(remote_absolute_path(r"folder\outside").is_err());
     }
 
     #[test]
