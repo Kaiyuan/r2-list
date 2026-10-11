@@ -37,7 +37,7 @@ jobs:
         shell: pwsh
         run: |
           choco install -y visualstudio2022buildtools --package-parameters "--includeRecommended --add Microsoft.VisualStudio.Workload.NativeDesktop --passive --locale en-US"
-          choco install -y microsoft-edge-webview2 -y
+          winget install --id Microsoft.EdgeWebView2Runtime --exact --silent --accept-source-agreements --accept-package-agreements --disable-interactivity || exit 0
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
