@@ -1,7 +1,450 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+    time::UNIX_EPOCH,
+};
+
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use serde::Serialize;
+use tauri::{AppHandle, Manager, State};
+
+#[derive(Default)]
+struct LocalDirectory(Mutex<Option<PathBuf>>);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectoryEntry {
+    path: String,
+    name: String,
+    kind: String,
+    size_bytes: u64,
+    modified_ms: u64,
+    extension: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectoryListing {
+    root_path: String,
+    current_path: String,
+    entries: Vec<DirectoryEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewData {
+    mime_type: String,
+    data_base64: String,
+    size_bytes: u64,
+}
+
+fn file_kind(extension: &str) -> &'static str {
+    match extension {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" | "ico" => "image",
+        "mp4" | "m4v" | "mov" | "webm" | "ogv" | "mkv" => "video",
+        "mp3" | "wav" | "ogg" | "oga" | "m4a" | "aac" | "flac" | "opus" => "audio",
+        "pdf" | "doc" | "docx" | "odt" | "rtf" | "xls" | "xlsx" | "ods" | "ppt" | "pptx"
+        | "odp" => "document",
+        "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" => "archive",
+        "txt" | "md" | "markdown" | "csv" | "tsv" | "json" | "jsonl" | "xml" | "html" | "htm"
+        | "css" | "js" | "jsx" | "ts" | "tsx" | "rs" | "py" | "toml" | "yaml" | "yml" | "ini"
+        | "log" | "sql" | "sh" | "bat" | "ps1" | "c" | "h" | "cpp" | "java" => "text",
+        _ => "file",
+    }
+}
+
+fn mime_type(extension: &str) -> &'static str {
+    match extension {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "avif" => "image/avif",
+        "ico" => "image/x-icon",
+        "pdf" => "application/pdf",
+        "mp4" | "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "ogv" => "video/ogg",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" | "oga" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        "aac" => "audio/aac",
+        "flac" => "audio/flac",
+        "opus" => "audio/opus",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "html" | "htm" => "text/html",
+        "xml" => "application/xml",
+        "csv" => "text/csv",
+        "json" => "application/json",
+        _ => "text/plain",
+    }
+}
+
+fn active_root(state: &LocalDirectory) -> Result<PathBuf, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "Directory state unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "Choose a local directory first".to_string())
+}
+
+fn display_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        if let Some(unc_path) = value.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{unc_path}");
+        }
+        if let Some(normal_path) = value.strip_prefix(r"\\?\") {
+            return normal_path.to_string();
+        }
+    }
+    value.into_owned()
+}
+
+fn resolve_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    let relative = Path::new(relative_path);
+    if relative.is_absolute() {
+        return Err("Absolute paths are not allowed".to_string());
+    }
+    let path = fs::canonicalize(root.join(relative)).map_err(|error| error.to_string())?;
+    if !path.starts_with(root) {
+        return Err("Path is outside the selected directory".to_string());
+    }
+    Ok(path)
+}
+
+fn list_directory(root: &Path, current: &Path) -> Result<Vec<DirectoryEntry>, String> {
+    let mut entries = Vec::new();
+    for item in fs::read_dir(current).map_err(|error| error.to_string())? {
+        let item = item.map_err(|error| error.to_string())?;
+        let path = match fs::canonicalize(item.path()) {
+            Ok(path) if path.starts_with(root) => path,
+            _ => continue,
+        };
+        let metadata = item.metadata().map_err(|error| error.to_string())?;
+        let relative_path = path.strip_prefix(root).map_err(|error| error.to_string())?;
+        let name = item.file_name().to_string_lossy().into_owned();
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let modified_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+            .map(|value| value.as_millis().min(u64::MAX as u128) as u64)
+            .unwrap_or_default();
+        entries.push(DirectoryEntry {
+            path: relative_path.to_string_lossy().replace('\\', "/"),
+            name,
+            kind: if metadata.is_dir() {
+                "directory"
+            } else {
+                file_kind(&extension)
+            }
+            .to_string(),
+            size_bytes: if metadata.is_file() {
+                metadata.len()
+            } else {
+                0
+            },
+            modified_ms,
+            extension,
+        });
+    }
+    entries.sort_by(|left, right| {
+        right
+            .kind
+            .cmp(&left.kind)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+    Ok(entries)
+}
+
+#[tauri::command]
+fn default_directory() -> Option<String> {
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    let home = PathBuf::from(home);
+    let documents = home.join("Documents");
+    Some(
+        if documents.is_dir() { documents } else { home }
+            .to_string_lossy()
+            .into_owned(),
+    )
+}
+
+#[tauri::command]
+fn open_directory(
+    path: String,
+    app: AppHandle,
+    state: State<'_, LocalDirectory>,
+) -> Result<DirectoryListing, String> {
+    let root = fs::canonicalize(path).map_err(|error| error.to_string())?;
+    if !root.is_dir() {
+        return Err("The selected path is not a directory".to_string());
+    }
+    app.asset_protocol_scope()
+        .allow_directory(&root, true)
+        .map_err(|error| error.to_string())?;
+    *state
+        .0
+        .lock()
+        .map_err(|_| "Directory state unavailable".to_string())? = Some(root.clone());
+    let entries = list_directory(&root, &root)?;
+    Ok(DirectoryListing {
+        root_path: display_path(&root),
+        current_path: String::new(),
+        entries,
+    })
+}
+
+#[tauri::command]
+fn read_directory(
+    path: String,
+    state: State<'_, LocalDirectory>,
+) -> Result<DirectoryListing, String> {
+    let root = active_root(&state)?;
+    let current = resolve_path(&root, &path)?;
+    if !current.is_dir() {
+        return Err("The selected path is not a directory".to_string());
+    }
+    let current_path = current
+        .strip_prefix(&root)
+        .map_err(|error| error.to_string())?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let entries = list_directory(&root, &current)?;
+    Ok(DirectoryListing {
+        root_path: display_path(&root),
+        current_path,
+        entries,
+    })
+}
+
+#[tauri::command]
+fn create_directory(
+    path: String,
+    name: String,
+    state: State<'_, LocalDirectory>,
+) -> Result<DirectoryListing, String> {
+    let name = name.trim();
+    let name_path = Path::new(name);
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name_path.components().count() != 1
+        || !matches!(
+            name_path.components().next(),
+            Some(std::path::Component::Normal(_))
+        )
+    {
+        return Err("Enter a valid folder name".to_string());
+    }
+    let root = active_root(&state)?;
+    let current = resolve_path(&root, &path)?;
+    if !current.is_dir() {
+        return Err("The selected path is not a directory".to_string());
+    }
+    fs::create_dir(current.join(name)).map_err(|error| error.to_string())?;
+    let current_path = current
+        .strip_prefix(&root)
+        .map_err(|error| error.to_string())?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let entries = list_directory(&root, &current)?;
+    Ok(DirectoryListing {
+        root_path: display_path(&root),
+        current_path,
+        entries,
+    })
+}
+
+fn available_destination(directory: &Path, name: &str) -> PathBuf {
+    let source = Path::new(name);
+    let stem = source.file_stem().unwrap_or_default().to_string_lossy();
+    let extension = source.extension().map(|value| value.to_string_lossy());
+    for suffix in 1.. {
+        let candidate_name = if suffix == 1 {
+            name.to_string()
+        } else if let Some(extension) = &extension {
+            format!("{stem} ({suffix}).{extension}")
+        } else {
+            format!("{stem} ({suffix})")
+        };
+        let candidate = directory.join(candidate_name);
+        if fs::symlink_metadata(&candidate).is_err() {
+            return candidate;
+        }
+    }
+    unreachable!()
+}
+
+#[tauri::command]
+fn import_files(
+    paths: Vec<String>,
+    directory: String,
+    state: State<'_, LocalDirectory>,
+) -> Result<DirectoryListing, String> {
+    let root = active_root(&state)?;
+    let current = resolve_path(&root, &directory)?;
+    if !current.is_dir() {
+        return Err("The selected path is not a directory".to_string());
+    }
+    for source in paths {
+        let source = fs::canonicalize(source).map_err(|error| error.to_string())?;
+        let metadata = fs::metadata(&source).map_err(|error| error.to_string())?;
+        if !metadata.is_file() {
+            return Err("Only files can be added to this directory".to_string());
+        }
+        let name = source
+            .file_name()
+            .ok_or_else(|| "The selected file has no name".to_string())?
+            .to_string_lossy();
+        let destination = available_destination(&current, &name);
+        fs::copy(source, destination).map_err(|error| error.to_string())?;
+    }
+    let current_path = current
+        .strip_prefix(&root)
+        .map_err(|error| error.to_string())?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let entries = list_directory(&root, &current)?;
+    Ok(DirectoryListing {
+        root_path: display_path(&root),
+        current_path,
+        entries,
+    })
+}
+
+#[tauri::command]
+fn read_preview(path: String, state: State<'_, LocalDirectory>) -> Result<PreviewData, String> {
+    const MAX_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
+    let root = active_root(&state)?;
+    let path = resolve_path(&root, &path)?;
+    let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("The selected path is not a file".to_string());
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let preview_limit = match file_kind(&extension) {
+        "text" => 2 * 1024 * 1024,
+        "document" => 16 * 1024 * 1024,
+        _ => MAX_PREVIEW_BYTES,
+    };
+    if metadata.len() > preview_limit {
+        return Err(format!(
+            "This file exceeds the {} MB preview limit",
+            preview_limit / 1024 / 1024
+        ));
+    }
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    Ok(PreviewData {
+        mime_type: mime_type(&extension).to_string(),
+        data_base64: STANDARD.encode(&bytes),
+        size_bytes: bytes.len() as u64,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(LocalDirectory::default())
+        .invoke_handler(tauri::generate_handler![
+            default_directory,
+            open_directory,
+            read_directory,
+            create_directory,
+            import_files,
+            read_preview
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{available_destination, file_kind, list_directory, resolve_path};
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn temporary_directory() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("r2-list-test-{}-{unique}", std::process::id()));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn recognizes_preview_file_kinds() {
+        assert_eq!(file_kind("png"), "image");
+        assert_eq!(file_kind("mp3"), "audio");
+        assert_eq!(file_kind("md"), "text");
+        assert_eq!(file_kind("pdf"), "document");
+    }
+
+    #[test]
+    fn refuses_paths_outside_the_selected_root() {
+        let directory = temporary_directory();
+        let root = directory.join("root");
+        let outside = directory.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+
+        assert!(resolve_path(&root, "../outside").is_err());
+        assert!(resolve_path(&root, outside.to_str().unwrap()).is_err());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn lists_real_file_metadata_relative_to_the_root() {
+        let root = fs::canonicalize(temporary_directory()).unwrap();
+        fs::write(root.join("notes.md"), "hello").unwrap();
+        fs::create_dir(root.join("images")).unwrap();
+
+        let entries = list_directory(&root, &root).unwrap();
+        assert!(entries.iter().any(|entry| entry.path == "notes.md"
+            && entry.kind == "text"
+            && entry.size_bytes == 5));
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.path == "images" && entry.kind == "directory")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn chooses_a_new_name_instead_of_overwriting_imports() {
+        let directory = temporary_directory();
+        fs::write(directory.join("notes.txt"), "existing").unwrap();
+
+        let destination = available_destination(&directory, "notes.txt");
+
+        assert_eq!(destination.file_name().unwrap(), "notes (2).txt");
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

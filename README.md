@@ -4,6 +4,8 @@ R2 List 是一个基于 Tauri、Rust、React 和 TypeScript 的桌面文件工�
 
 界面支持 English、Français、简体中文、繁體中文、日本語和 한국어；外观可跟随系统设置，或手动选择亮色/暗色。
 
+![R2 List](https://github.com/Kaiyuan/r2-list/blob/main/docs/imsges/r2list-windows.png)
+
 ## 开发环境
 
 - Node.js 20.19+ 或 22.12+
@@ -42,6 +44,11 @@ npm run build:portable:linux
 ```sh
 npm run build
 npm test
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-当前工作区先以样例目录展示交互；本地和远程文件系统适配器尚未接入。应用只负责分析目录映射和生成 URL，不负责向 R2 上传或同步对象。
+应用首次启动会打开“文档”目录；也可以通过左侧位置选择其他本地目录。目录内容由 Rust 后端读取，支持导航、搜索、新建文件夹和导入文件；导入时遇到重名会自动生成新文件名，不覆盖原文件。所选目录会保存在本机，后续启动自动恢复。
+
+双击文件可打开大预览，右侧面板显示当前选中文件。支持常见图片、UTF-8 文本、Markdown、CSV/TSV、PDF、DOCX、XLSX、PPTX，以及 WebView 可解码的音频/视频。文本预览限制为 2 MB，Office 文件限制为 16 MB；大图片、PDF 和音视频通过受限的本地文件 URL 读取。任意专有/二进制格式、旧版 Office 格式以及当前 WebView 不支持的媒体 codec 无法保证预览。
+
+目前仅接入本地文件系统；SMB 等网络位置尚未连接。应用只生成和复制 Cloudflare R2 URL，不负责向 R2 上传或同步对象。
