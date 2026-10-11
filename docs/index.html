@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f6f2" />
+    <meta
+      name="description"
+      content="R2 List 是一个轻量桌面文件工作区，可将本地文件路径转换为 Cloudflare R2 对象 URL。"
+    />
+    <title>R2 List — Cloudflare R2 文件链接工作区</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
+        color: #18221d;
+        background: #f5f6f2;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        width: min(1080px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 28px 0;
+      }
+
+      .brand {
+        font-size: 20px;
+        font-weight: 750;
+        letter-spacing: -0.04em;
+        text-decoration: none;
+      }
+
+      .repo-link {
+        color: #53625a;
+        font-size: 14px;
+        text-decoration: none;
+      }
+
+      .hero {
+        padding: 64px 0 44px;
+        text-align: center;
+      }
+
+      .eyebrow {
+        color: #477a58;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 16px 0;
+        font-size: clamp(42px, 8vw, 76px);
+        letter-spacing: -0.075em;
+        line-height: 1;
+      }
+
+      .intro {
+        max-width: 620px;
+        margin: 0 auto;
+        color: #53625a;
+        font-size: clamp(16px, 2vw, 19px);
+        line-height: 1.75;
+      }
+
+      .actions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 30px 0 0;
+      }
+
+      .button {
+        display: inline-flex;
+        min-height: 46px;
+        align-items: center;
+        justify-content: center;
+        padding: 0 20px;
+        border: 1px solid #d9dfd9;
+        border-radius: 9px;
+        background: #fff;
+        font-size: 14px;
+        font-weight: 650;
+        text-decoration: none;
+      }
+
+      .button-primary {
+        border-color: #286c41;
+        background: #286c41;
+        color: #fff;
+      }
+
+      .screenshot {
+        margin: 24px 0 0;
+        overflow: hidden;
+        border: 1px solid #dfe4de;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 24px 70px rgb(31 48 37 / 10%);
+      }
+
+      .screenshot img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        padding: 70px 0 80px;
+      }
+
+      .feature {
+        padding: 22px;
+        border: 1px solid #e2e7e1;
+        border-radius: 12px;
+        background: rgb(255 255 255 / 65%);
+      }
+
+      .feature h2 {
+        margin: 0 0 10px;
+        font-size: 16px;
+      }
+
+      .feature p {
+        margin: 0;
+        color: #627067;
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      footer {
+        padding: 22px 0 32px;
+        border-top: 1px solid #e2e7e1;
+        color: #68756d;
+        font-size: 13px;
+        text-align: center;
+      }
+
+      @media (max-width: 700px) {
+        .hero {
+          padding-top: 42px;
+        }
+
+        .features {
+          grid-template-columns: 1fr;
+          gap: 12px;
+          padding: 44px 0 56px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <a class="brand" href="./">R2 List</a>
+        <a class="repo-link" href="https://github.com/Kaiyuan/r2-list">查看 GitHub 项目 →</a>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="eyebrow">Your files, ready for R2</div>
+          <h1>整理文件，复制链接。</h1>
+          <p class="intro">
+            R2 List 是一个轻量桌面文件工作区。选择本地目录，即可根据相对路径生成
+            Cloudflare R2 对象 URL，并快速复制为 URL、Markdown 或 HTML 链接。
+          </p>
+          <div class="actions">
+            <a
+              class="button button-primary"
+              href="https://github.com/Kaiyuan/r2-list/releases/latest/download/r2-list-windows-x64.zip"
+            >下载 Windows x64</a>
+            <a class="button" href="https://github.com/Kaiyuan/r2-list/releases/latest">所有版本</a>
+          </div>
+        </section>
+
+        <figure class="screenshot">
+          <img
+            src="./images/r2list-windows.png"
+            alt="R2 List Windows 桌面界面截图"
+            width="1440"
+            height="900"
+          />
+        </figure>
+
+        <section class="features" aria-label="功能">
+          <article class="feature">
+            <h2>文件工作区</h2>
+            <p>浏览、搜索本地目录，新建文件夹或导入文件；重名文件会自动改名，不覆盖原文件。</p>
+          </article>
+          <article class="feature">
+            <h2>链接一键复制</h2>
+            <p>根据目录相对路径生成 R2 对象 URL，并复制为纯链接、Markdown 或 HTML 格式。</p>
+          </article>
+          <article class="feature">
+            <h2>桌面原生体验</h2>
+            <p>基于 Tauri 构建，支持 Windows、macOS 和 Linux，并提供多语言界面与主题切换。</p>
+          </article>
+        </section>
+      </main>
+
+      <footer>
+        R2 List 只生成和复制 URL，不会上传或同步文件到 Cloudflare R2。
+      </footer>
+    </div>
+  </body>
+</html>

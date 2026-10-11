@@ -4,7 +4,9 @@ R2 List 是一个基于 Tauri、Rust、React 和 TypeScript 的桌面文件工�
 
 界面支持 English、Français、简体中文、繁體中文、日本語和 한국어；外观可跟随系统设置，或手动选择亮色/暗色。
 
-![R2 List](https://github.com/Kaiyuan/r2-list/blob/main/docs/imsges/r2list-windows.png)
+![R2 List](https://github.com/Kaiyuan/r2-list/blob/main/docs/images/r2list-windows.png)
+
+项目主页：[GitHub Pages](https://kaiyuan.github.io/r2-list/)
 
 ## 开发环境
 
@@ -35,7 +37,7 @@ npm run build:portable:macos
 npm run build:portable:linux
 ```
 
-每个命令只适用于对应操作系统，产物写入 `artifacts/portable/`。推送任意 Git tag 后，GitHub Actions 会构建 Windows x64、macOS（runner 原生架构）和 Linux x64 产物，并创建或更新该 tag 对应的 GitHub Release。
+每个命令只适用于对应操作系统，产物写入 `artifacts/portable/`。推送 `v` 开头的版本 tag（例如 `v1.2.3`）后，GitHub Actions 会构建 Windows x64、macOS（runner 原生架构）和 Linux x64 产物，并创建或更新该 tag 对应的 GitHub Release。普通代码 push 不会触发发布或 Pages 部署。
 
 平台运行时、系统依赖及未签名应用的限制见 [`docs/portable-releases.md`](docs/portable-releases.md)。
 

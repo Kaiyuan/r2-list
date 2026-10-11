@@ -24,4 +24,8 @@ Artifacts are written under the ignored `artifacts/portable/` directory. The scr
 
 ## GitHub Releases
 
-Pushing a tag starts `.github/workflows/release-portable.yml`. The workflow builds all three platforms in parallel and uploads their outputs to the GitHub Release for that exact tag. The repository Actions workflow needs `contents: write` permission, which the workflow requests explicitly.
+Pushing a version tag matching `v*` (for example, `v1.2.3`) starts `.github/workflows/release-portable.yml`. Pushing code to a branch or creating a non-version tag does not start the workflow. It builds all three platforms in parallel and uploads their outputs to the GitHub Release for that exact tag. The repository Actions workflow needs `contents: write` permission, which the workflow requests explicitly.
+
+## GitHub Pages
+
+The project site is deployed from `docs/` by `.github/workflows/pages.yml`, also only when a `v*` version tag is pushed. Before the first deployment, set the repository's **Settings → Pages → Build and deployment → Source** to **GitHub Actions**.
