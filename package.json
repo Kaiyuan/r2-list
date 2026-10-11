@@ -11,6 +11,8 @@
     "build:portable:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable-windows.ps1",
     "build:portable:macos": "bash scripts/build-portable-macos.sh",
     "build:portable:linux": "bash scripts/build-portable-linux.sh",
+    "build:portable:linux:x64": "bash scripts/build-portable-linux.sh x64",
+    "build:portable:linux:arm64": "bash scripts/build-portable-linux.sh arm64",
     "tauri": "tauri"
   },
   "dependencies": {

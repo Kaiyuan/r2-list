@@ -4,8 +4,8 @@ Each platform script builds only for the current host. Build prerequisites are N
 
 ## Artifacts
 
-- Local builds use `r2-list-windows-x64.zip`, `r2-list-macos-<architecture>.zip`, and `r2-list-linux-x64.AppImage`.
-- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.1.zip`, `r2-list-macos-arm64-v0.0.1.zip`, and `r2-list-linux-x64-v0.0.1.AppImage`.
+- Local builds use `r2-list-windows-x64.zip`, `r2-list-macos-<architecture>.zip`, and `r2-list-linux-<architecture>.AppImage` (for Linux: `x64` or `arm64`).
+- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.1.zip`, `r2-list-macos-arm64-v0.0.1.zip`, `r2-list-linux-x64-v0.0.1.AppImage`, and `r2-list-linux-arm64-v0.0.1.AppImage`.
 - macOS architecture is detected from the build runner (`arm64` or `x64`).
 
 These are portable outputs, not installers. Windows still requires the WebView2 Runtime; it is included with current Windows releases on most machines. Linux AppImage execution may require FUSE 2 and the host WebKit/GTK libraries. macOS builds are unsigned unless signing credentials are configured, so Gatekeeper may require the user to approve the app manually. Windows SmartScreen may also display a warning for unsigned binaries.
@@ -18,13 +18,15 @@ Run the matching command from the repository root:
 npm run build:portable:windows
 npm run build:portable:macos
 npm run build:portable:linux
+npm run build:portable:linux:x64
+npm run build:portable:linux:arm64
 ```
 
 Artifacts are written under the ignored `artifacts/portable/` directory. The scripts use `npm ci` and the Tauri CLI; Rust, the native linker, and operating-system libraries must already be installed.
 
 ## GitHub Releases
 
-Pushing a version tag matching `v*` (for example, `v1.2.3`) starts `.github/workflows/release-portable.yml`. Pushing code to a branch or creating a non-version tag does not start the workflow. It builds all three platforms in parallel and uploads their outputs to the GitHub Release for that exact tag. The repository Actions workflow needs `contents: write` permission, which the workflow requests explicitly.
+Pushing a version tag matching `v*` (for example, `v1.2.3`) starts `.github/workflows/release-portable.yml`. Pushing code to a branch or creating a non-version tag does not start the workflow. It builds Windows, macOS, and both Linux architectures (x64 and arm64) in parallel and uploads their outputs to the GitHub Release for that exact tag. The repository Actions workflow needs `contents: write` permission, which the workflow requests explicitly.
 
 ## GitHub Pages
 

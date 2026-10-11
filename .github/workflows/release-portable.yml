@@ -25,16 +25,38 @@ jobs:
             os: macos-latest
           - platform: linux-x64
             os: ubuntu-24.04
+          - platform: linux-arm64
+            os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Install Windows build dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install -y visualstudio2022buildtools --package-parameters "--includeRecommended --add Microsoft.VisualStudio.Workload.NativeDesktop --passive --locale en-US"
+          choco install -y microsoft-edge-webview2 -y
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          xcode-select --install || true
+          brew install pkg-config
+
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
+        shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential curl file libxdo-dev libssl-dev librsvg2-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev patchelf libfuse2t64
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file pkg-config \
+            libxdo-dev libssl-dev libgtk-3-dev \
+            libglib2.0-dev libcairo2-dev libpango1.0-dev libatk1.0-dev \
+            librsvg2-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            patchelf libfuse2t64
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -56,9 +78,9 @@ jobs:
         run: bash scripts/build-portable-macos.sh
 
       - name: Build Linux portable artifact
-        if: matrix.platform == 'linux-x64'
+        if: startsWith(matrix.platform, 'linux-')
         shell: bash
-        run: bash scripts/build-portable-linux.sh
+        run: bash scripts/build-portable-linux.sh "${{ matrix.platform == 'linux-x64' && 'x64' || 'arm64' }}"
 
       - name: Add version to Windows archive name
         if: matrix.platform == 'windows-x64'
@@ -85,11 +107,12 @@ jobs:
           mv "$archive" "${archive%.zip}-${GITHUB_REF_NAME}.zip"
 
       - name: Add version to Linux package name
-        if: matrix.platform == 'linux-x64'
+        if: startsWith(matrix.platform, 'linux-')
         shell: bash
         run: |
-          source="artifacts/portable/r2-list-linux-x64.AppImage"
-          destination="artifacts/portable/r2-list-linux-x64-${GITHUB_REF_NAME}.AppImage"
+          arch="${{ matrix.platform == 'linux-x64' && 'x64' || 'arm64' }}"
+          source="artifacts/portable/r2-list-linux-${arch}.AppImage"
+          destination="artifacts/portable/r2-list-linux-${arch}-${GITHUB_REF_NAME}.AppImage"
           if [[ ! -f "$source" ]]; then
             echo "Expected build artifact was not found: $source" >&2
             exit 1
