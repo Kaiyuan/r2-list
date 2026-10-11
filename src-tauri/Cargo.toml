@@ -1,6 +1,6 @@
 [package]
 name = "r2-list"
-version = "0.1.0"
+version = "0.0.1"
 description = "A desktop workspace for Cloudflare R2 directory URL management"
 authors = ["R2 List"]
 edition = "2024"
