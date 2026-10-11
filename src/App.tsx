@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent, type MouseEven
 import {
   Archive, ArrowDownToLine, ArrowLeft, Check, ChevronDown, ChevronRight, Cloud, Copy,
   File, FileAudio, FileCode2, FileImage, FileText, Film, Folder, FolderPlus, HardDrive, Image, MoreHorizontal,
-  Languages, Moon, Plus, Search, Settings2, ShieldCheck, Sun, Upload, X,
+  Languages, Moon, Plus, Search, Settings2, ShieldCheck, Sun, Trash2, Upload, X,
 } from "lucide-react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -17,6 +17,8 @@ type EntryKind = "directory" | "image" | "video" | "audio" | "text" | "document"
 type Entry = { path: string; name: string; kind: EntryKind; sizeBytes: number; modifiedMs: number; extension: string };
 type DirectoryListing = { rootPath: string; currentPath: string; entries: Entry[] };
 type PreviewData = { mimeType: string; dataBase64: string; sizeBytes: number };
+type DirectoryConfig = { path: string; rules: UrlRules };
+type UserConfig = { directories: DirectoryConfig[]; activeDirectory: string | null; locale: Locale | null; theme: ThemePreference | null };
 type MenuState = { x: number; y: number; entry: Entry } | null;
 const initialRules: UrlRules = { baseUrl: "https://cdn.studio-example.com", prefix: "northstar/media", template: "" };
 const parentPath = (path: string) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
@@ -28,15 +30,6 @@ const formatBytes = (bytes: number) => {
   do { value /= 1024; unit += 1; } while (value >= 1024 && unit < units.length - 1);
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} ${units[unit]}`;
 };
-
-function loadRules(): UrlRules {
-  try {
-    const saved = localStorage.getItem("r2-list-url-rules");
-    return saved ? { ...initialRules, ...JSON.parse(saved) as Partial<UrlRules> } : initialRules;
-  } catch {
-    return initialRules;
-  }
-}
 
 function loadLocale(): Locale {
   const saved = localStorage.getItem("r2-list-language");
@@ -74,9 +67,13 @@ function App() {
   const [selectedPath, setSelectedPath] = useState("");
   const [loadingDirectory, setLoadingDirectory] = useState(true);
   const [search, setSearch] = useState("");
-  const [rules, setRules] = useState<UrlRules>(loadRules);
-  const [draftRules, setDraftRules] = useState<UrlRules>(loadRules);
+  const [directoryConfigs, setDirectoryConfigs] = useState<DirectoryConfig[]>([]);
+  const [activeDirectory, setActiveDirectory] = useState("");
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [draftRules, setDraftRules] = useState<UrlRules>(initialRules);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [locale, setLocale] = useState<Locale>(loadLocale);
@@ -90,6 +87,7 @@ function App() {
   const [previewError, setPreviewError] = useState("");
   const [toast, setToast] = useState("");
   const theme = resolveTheme(themePreference, systemDark);
+  const rules = directoryConfigs.find((directory) => directory.path === rootPath)?.rules ?? initialRules;
   const t = (key: TranslationKey, values?: Record<string, string | number>) => translate(locale, key, values);
 
   useEffect(() => {
@@ -109,16 +107,39 @@ function App() {
     let active = true;
     void (async () => {
       try {
-        const savedPath = localStorage.getItem("r2-list-local-directory");
-        const path = savedPath ?? await invoke<string | null>("default_directory");
-        if (active && path) await loadDirectory(path);
+        const savedConfig = await invoke<UserConfig>("load_user_config");
+        if (!active) return;
+        const migratedRules = (() => {
+          try { return { ...initialRules, ...JSON.parse(localStorage.getItem("r2-list-url-rules") ?? "{}") as Partial<UrlRules> }; }
+          catch { return initialRules; }
+        })();
+        const directories = savedConfig.directories?.length
+          ? savedConfig.directories
+          : (localStorage.getItem("r2-list-local-directory") ? [{ path: localStorage.getItem("r2-list-local-directory")!, rules: migratedRules }] : []);
+        setDirectoryConfigs(directories);
+        if (isLocale(savedConfig.locale)) setLocale(savedConfig.locale);
+        if (savedConfig.theme === "system" || savedConfig.theme === "light" || savedConfig.theme === "dark") setThemePreference(savedConfig.theme);
+        const savedPath = savedConfig.activeDirectory ?? directories[0]?.path ?? await invoke<string | null>("default_directory");
+        if (savedPath) await loadDirectory(savedPath);
+        setConfigLoaded(true);
       } catch (error) {
         if (active) setToast(`${t("directoryLoadFailed")}: ${String(error)}`);
+        const fallbackPath = localStorage.getItem("r2-list-local-directory") ?? await invoke<string | null>("default_directory").catch(() => null);
+        if (active && fallbackPath) await loadDirectory(fallbackPath);
+        if (active) setConfigLoaded(true);
       } finally {
         if (active) setLoadingDirectory(false);
       }
     })();
     return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (!configLoaded) return;
+    const config: UserConfig = { directories: directoryConfigs, activeDirectory: activeDirectory || null, locale, theme: themePreference };
+    void invoke("save_user_config", { config }).catch((error: unknown) => console.error("Could not save user config", error));
+  }, [configLoaded, directoryConfigs, activeDirectory, locale, themePreference]);
+  useEffect(() => {
+    void invoke<string>("app_version").then(setAppVersion).catch(() => setAppVersion(""));
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -184,13 +205,20 @@ function App() {
   const selectedEntry = entries.find((entry) => entry.path === selectedPath);
   const pathParts = currentPath ? currentPath.split("/") : [];
 
-  function showNotConnected() { setToast(t("realDirectoryPending")); }
-  function openRules() { setDraftRules(rules); setSettingsOpen(true); }
+  function openRules() {
+    if (!rootPath) { setToast(t("chooseFolder")); return; }
+    setDraftRules(rules);
+    setSettingsOpen(true);
+  }
   async function loadDirectory(path: string) {
     setLoadingDirectory(true);
     try {
       const listing = await invoke<DirectoryListing>("open_directory", { path });
       setRootPath(listing.rootPath);
+      setActiveDirectory(listing.rootPath);
+      setDirectoryConfigs((current) => current.some((directory) => directory.path === listing.rootPath)
+        ? current
+        : [...current, { path: listing.rootPath, rules: initialRules }]);
       setCurrentPath(listing.currentPath);
       setEntries(listing.entries);
       setSelectedPath(listing.entries.find((entry) => entry.kind !== "directory")?.path ?? "");
@@ -207,6 +235,22 @@ function App() {
       const selected = await open({ directory: true, multiple: false });
       if (typeof selected === "string") await loadDirectory(selected);
     } catch (error) { setToast(`${t("directoryLoadFailed")}: ${String(error)}`); }
+  }
+  async function removeDirectory(path: string) {
+    const remaining = directoryConfigs.filter((directory) => directory.path !== path);
+    setDirectoryConfigs(remaining);
+    if (activeDirectory !== path) return;
+    const nextPath = remaining[0]?.path;
+    if (nextPath) await loadDirectory(nextPath);
+    else {
+      await invoke("clear_directory").catch(() => undefined);
+      setActiveDirectory("");
+      setRootPath("");
+      setCurrentPath("");
+      setEntries([]);
+      setSelectedPath("");
+      setPreviewEntry(null);
+    }
   }
   async function navigateTo(path: string) {
     setLoadingDirectory(true);
@@ -280,8 +324,7 @@ function App() {
     event.preventDefault();
     try {
       buildObjectUrl("sample-check.txt", draftRules);
-      setRules(draftRules);
-      localStorage.setItem("r2-list-url-rules", JSON.stringify(draftRules));
+      setDirectoryConfigs((current) => current.map((directory) => directory.path === rootPath ? { ...directory, rules: draftRules } : directory));
       setSettingsOpen(false);
       setToast(t("rulesSaved"));
     } catch { setToast(t("invalidRules")); }
@@ -294,11 +337,10 @@ function App() {
   return (
     <main className="app-shell" onClick={() => menu && setMenu(null)}>
       <aside className="sidebar">
-        <div className="brand-lockup"><div className="brand-mark"><Cloud size={19} strokeWidth={2.3} /></div><div><strong>R2 List</strong><span>{t("objectWorkspace")}</span></div><button className="icon-button sidebar-more" aria-label={t("viewOptions")} title={t("viewOptions")}><MoreHorizontal size={18} /></button></div>
+        <div className="brand-lockup"><div className="brand-mark"><Cloud size={19} strokeWidth={2.3} /></div><div><strong>R2 List</strong><span>{t("objectWorkspace")}</span></div><button className="icon-button sidebar-more" aria-label={t("aboutApp")} title={t("aboutApp")} onClick={() => setAboutOpen(true)}><MoreHorizontal size={18} /></button></div>
         <div className="sidebar-section"><div className="section-label">{t("workspace")}</div><button className="nav-item active"><HardDrive size={17} /><span>{t("files")}</span><span className="nav-count">{entries.length}</span></button><button className="nav-item" onClick={openRules}><Settings2 size={17} /><span>{t("urlRules")}</span></button></div>
-        <div className="sidebar-section locations-section"><div className="section-heading"><span className="section-label">{t("locations")}</span><button className="icon-button tiny" aria-label={t("addLocation")} title={t("addLocation")} onClick={showNotConnected}><Plus size={15} /></button></div>
-          <button className="location-item selected" onClick={() => void chooseDirectory()}><span className="location-dot local-dot" /><span className="location-copy"><strong>{rootPath.split(/[\\/]/).filter(Boolean).pop() ?? t("mediaLibrary")}</strong><small>{rootPath || t("chooseFolder")}</small></span><ChevronRight size={14} /></button>
-          <button className="location-item" onClick={showNotConnected}><span className="location-dot remote-dot" /><span className="location-copy"><strong>{t("studioNas")}</strong><small>{t("smbOffline")}</small></span><span className="offline-dot" /></button>
+        <div className="sidebar-section locations-section"><div className="section-heading"><span className="section-label">{t("locations")}</span><button className="icon-button tiny" aria-label={t("addLocation")} title={t("addLocation")} onClick={() => void chooseDirectory()}><Plus size={15} /></button></div>
+          {directoryConfigs.map((directory) => <div className={`location-entry ${directory.path === activeDirectory ? "active" : ""}`} key={directory.path}><button className="location-item" onClick={() => void loadDirectory(directory.path)}><span className="location-dot local-dot" /><span className="location-copy"><strong>{directory.path.split(/[\\/]/).filter(Boolean).pop()}</strong><small>{directory.path}</small></span></button><button className="location-action" aria-label={t("removeLocation")} title={t("removeLocation")} onClick={() => void removeDirectory(directory.path)}><Trash2 size={15} /></button></div>)}
           <button className="add-location" onClick={() => void chooseDirectory()}><Plus size={14} /> {t("addLocation")}</button>
         </div>
         <div className="sidebar-bottom"><div className="sync-note"><span className="note-icon"><ShieldCheck size={15} /></span><span><strong>{t("urlOnly")}</strong><small>{t("externalSync")}</small></span></div>
@@ -313,7 +355,7 @@ function App() {
         <div className="workspace-heading"><div><div className="eyebrow"><span className="eyebrow-line" />{t("localDirectory")} <span className="muted-separator">/</span> {t("urlMapped")}</div><h1>{pathParts[pathParts.length - 1] ?? rootPath.split(/[\\/]/).filter(Boolean).pop() ?? t("mediaLibrary")}</h1><p className="workspace-path"><HardDrive size={13} /> {rootPath || t("chooseFolder")} <span className="path-dot">·</span> {formatItemCount(locale, visibleEntries.length)}</p></div>
           <div className="heading-actions"><button className="button-secondary" onClick={openRules}><Settings2 size={15} /> {t("urlRules")}</button><button className="button-primary" onClick={() => void chooseFiles()}><Upload size={15} /> {t("addFiles")}</button></div>
         </div>
-        <div className="toolbar"><div className="search-box"><Search size={16} /><input aria-label={t("searchAria")} value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder={t("searchPlaceholder")} /><kbd>⌘ F</kbd></div><div className="toolbar-spacer" /><button className="toolbar-button" onClick={() => setNewFolderOpen(true)}><FolderPlus size={16} /><span>{t("newFolder")}</span></button><span className="toolbar-divider" /><button className="icon-button" aria-label={t("sortByName")} title={t("sortByName")}><ChevronDown size={16} /></button><button className="icon-button" aria-label={t("viewOptions")} title={t("viewOptions")}><MoreHorizontal size={17} /></button></div>
+        <div className="toolbar"><div className="search-box"><Search size={16} /><input aria-label={t("searchAria")} value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder={t("searchPlaceholder")} /><kbd>⌘ F</kbd></div><div className="toolbar-spacer" /><button className="toolbar-button" onClick={() => setNewFolderOpen(true)}><FolderPlus size={16} /><span>{t("newFolder")}</span></button><span className="toolbar-divider" /><button className="icon-button" aria-label={t("sortByName")} title={t("sortByName")}><ChevronDown size={16} /></button><button className="icon-button" aria-label={t("aboutApp")} title={t("aboutApp")} onClick={() => setAboutOpen(true)}><MoreHorizontal size={17} /></button></div>
         <div className="file-table-wrap">{currentPath && <button className="back-row" onClick={() => void navigateTo(parentPath(currentPath))}><ArrowLeft size={14} /> {t("back")}</button>}
           <div className="table-header"><span>{t("name")}</span><span>{t("size")}</span><span>{t("modified")}</span><span /></div>
           {loadingDirectory ? <div className="empty-state"><HardDrive size={20} /><span>{t("loadingDirectory")}</span></div> : visibleEntries.length ? visibleEntries.map((entry, index) => <button className={`file-row ${selectedPath === entry.path ? "selected" : ""}`} key={entry.path} onClick={() => openEntry(entry)} onDoubleClick={() => { if (entry.kind === "directory") openEntry(entry); else { setSelectedPath(entry.path); setPreviewEntry(entry); } }} onContextMenu={(event) => openContextMenu(event, entry)} style={{ "--row-index": index } as CSSProperties}>
@@ -345,6 +387,7 @@ function App() {
         <div className="template-help"><span>{"{base}"}</span>{t("helpBase")} <span>{"{key}"}</span>{t("helpKey")} <span>{"{bucket}"}</span>{t("helpBucket")}</div><div className="modal-preview"><span>{t("previewSample")}</span><code>{safePreview(selectedEntry?.path ?? "folder/file.jpg")}</code></div>
         <div className="modal-actions"><button type="button" className="button-secondary" onClick={() => setSettingsOpen(false)}>{t("cancel")}</button><button className="button-primary" type="submit"><Check size={15} />{t("saveRules")}</button></div>
       </form></div>}
+      {aboutOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setAboutOpen(false)}><section className="settings-modal about-modal" role="dialog" aria-modal="true" aria-label={t("aboutApp")}><div className="modal-heading"><div><span className="section-label">R2 LIST</span><h2>{t("aboutApp")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setAboutOpen(false)}><X size={18} /></button></div><p className="modal-description">{t("aboutDescription")}</p><div className="about-version"><span>{t("version")}</span><strong>{appVersion || "0.1.0"}</strong></div><div className="modal-actions"><button type="button" className="button-primary" onClick={() => setAboutOpen(false)}>{t("close")}</button></div></section></div>}
       {newFolderOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setNewFolderOpen(false)}><form className="settings-modal" onSubmit={createFolder}><div className="modal-heading"><div><span className="section-label">{t("localDirectoryActive")}</span><h2>{t("newFolder")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setNewFolderOpen(false)}><X size={18} /></button></div><label className="field-label">{t("folderName")}<input autoFocus value={newFolderName} onChange={(event) => setNewFolderName(event.currentTarget.value)} required maxLength={255} /></label><div className="modal-actions"><button type="button" className="button-secondary" onClick={() => setNewFolderOpen(false)}>{t("cancel")}</button><button className="button-primary" type="submit"><FolderPlus size={15} />{t("createFolder")}</button></div></form></div>}
       {toast && <div className="toast"><Check size={15} />{toast}</div>}
     </main>

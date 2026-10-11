@@ -79,3 +79,12 @@ body * { font-family: inherit !important; font-size: max(14px, 1em) !important; 
 .app-shell h1 { font-size: 26px !important; }
 .app-shell h2 { font-size: 20px !important; }
 .app-shell h3 { font-size: 16px !important; }
+.location-entry { display: flex; align-items: center; gap: 2px; margin: 2px 0; border-radius: 6px; }
+.location-entry.active, .location-entry:hover { background: var(--panel-soft); }
+.location-entry .location-item { min-width: 0; flex: 1; margin: 0; }
+.location-entry.active .location-item { background: transparent; }
+.location-action { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 5px; color: var(--muted); background: transparent; opacity: 0; cursor: pointer; }
+.location-entry:hover .location-action, .location-action:focus-visible { opacity: 1; }
+.location-action:hover { color: #b94b4b; background: var(--panel); }
+.about-version { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+.about-version strong { color: var(--ink); font-weight: 600; }

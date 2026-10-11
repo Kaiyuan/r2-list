@@ -6,11 +6,55 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 #[derive(Default)]
 struct LocalDirectory(Mutex<Option<PathBuf>>);
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectoryConfig {
+    path: String,
+    #[serde(default)]
+    rules: UrlRulesConfig,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UrlRulesConfig {
+    base_url: String,
+    #[serde(default)]
+    prefix: String,
+    #[serde(default)]
+    bucket: Option<String>,
+    #[serde(default)]
+    template: Option<String>,
+}
+
+impl Default for UrlRulesConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "https://cdn.studio-example.com".to_string(),
+            prefix: "northstar/media".to_string(),
+            bucket: None,
+            template: None,
+        }
+    }
+}
+
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UserConfig {
+    #[serde(default)]
+    directories: Vec<DirectoryConfig>,
+    #[serde(default)]
+    active_directory: Option<String>,
+    #[serde(default)]
+    locale: Option<String>,
+    #[serde(default)]
+    theme: Option<String>,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -182,6 +226,44 @@ fn default_directory() -> Option<String> {
             .to_string_lossy()
             .into_owned(),
     )
+}
+
+fn user_config_path() -> Result<PathBuf, String> {
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| "Could not locate the user home directory".to_string())?;
+    Ok(PathBuf::from(home).join("r2-list.comfig"))
+}
+
+#[tauri::command]
+fn load_user_config() -> Result<UserConfig, String> {
+    let path = user_config_path()?;
+    if !path.exists() {
+        return Ok(UserConfig::default());
+    }
+    let contents = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_user_config(config: UserConfig) -> Result<(), String> {
+    let path = user_config_path()?;
+    let contents = serde_json::to_vec_pretty(&config).map_err(|error| error.to_string())?;
+    fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+#[tauri::command]
+fn clear_directory(state: State<'_, LocalDirectory>) -> Result<(), String> {
+    *state
+        .0
+        .lock()
+        .map_err(|_| "Directory state unavailable".to_string())? = None;
+    Ok(())
 }
 
 #[tauri::command]
@@ -368,6 +450,10 @@ pub fn run() {
         .manage(LocalDirectory::default())
         .invoke_handler(tauri::generate_handler![
             default_directory,
+            load_user_config,
+            save_user_config,
+            app_version,
+            clear_directory,
             open_directory,
             read_directory,
             create_directory,
