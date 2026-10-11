@@ -28,4 +28,9 @@ Pushing a version tag matching `v*` (for example, `v1.2.3`) starts `.github/work
 
 ## GitHub Pages
 
-The project site is deployed from `docs/` by `.github/workflows/pages.yml`, also only when a `v*` version tag is pushed. Before the first deployment, set the repository's **Settings → Pages → Build and deployment → Source** to **GitHub Actions**.
+The project site is deployed from `docs/` by `.github/workflows/pages.yml`, also only when a `v*` version tag is pushed. Before the first deployment:
+
+1. Set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**.
+2. Open **Settings → Environments → github-pages** and make sure its deployment branch/tag rules allow `v*` tags (or allow all branches and tags). Otherwise GitHub rejects the Pages deployment before its job starts with an environment protection error.
+
+The Pages deployment is a separate workflow from the portable build and release workflow. A Pages environment rejection does not cancel or block the portable build jobs.
