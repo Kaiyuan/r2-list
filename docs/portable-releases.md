@@ -4,9 +4,9 @@ Each platform script builds only for the current host. Build prerequisites are N
 
 ## Artifacts
 
-- Windows x64: `r2-list-windows-x64.zip`, containing `r2-list.exe`.
-- macOS: `r2-list-macos-<architecture>.zip`, containing the `.app` bundle. The architecture is detected from the build runner (`arm64` or `x64`).
-- Linux x64: `r2-list-linux-x64.AppImage`.
+- Local builds use `r2-list-windows-x64.zip`, `r2-list-macos-<architecture>.zip`, and `r2-list-linux-x64.AppImage`.
+- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.1.zip`, `r2-list-macos-arm64-v0.0.1.zip`, and `r2-list-linux-x64-v0.0.1.AppImage`.
+- macOS architecture is detected from the build runner (`arm64` or `x64`).
 
 These are portable outputs, not installers. Windows still requires the WebView2 Runtime; it is included with current Windows releases on most machines. Linux AppImage execution may require FUSE 2 and the host WebKit/GTK libraries. macOS builds are unsigned unless signing credentials are configured, so Gatekeeper may require the user to approve the app manually. Windows SmartScreen may also display a warning for unsigned binaries.
 
@@ -28,9 +28,4 @@ Pushing a version tag matching `v*` (for example, `v1.2.3`) starts `.github/work
 
 ## GitHub Pages
 
-The project site is deployed from `docs/` by `.github/workflows/pages.yml`, also only when a `v*` version tag is pushed. Before the first deployment:
-
-1. Set **Settings → Pages → Build and deployment → Source** to **GitHub Actions**.
-2. Open **Settings → Environments → github-pages** and make sure its deployment branch/tag rules allow `v*` tags (or allow all branches and tags). Otherwise GitHub rejects the Pages deployment before its job starts with an environment protection error.
-
-The Pages deployment is a separate workflow from the portable build and release workflow. A Pages environment rejection does not cancel or block the portable build jobs.
+The project site is static HTML in `docs/`; it does not need a build workflow. To publish it, set **Settings → Pages → Build and deployment → Source** to **Deploy from a branch**, then select the default branch and `/docs` folder. If the `github-pages` environment has deployment branch/tag restrictions, allow the default branch as well. Pages publishing is separate from the version-tag workflow that builds and releases the desktop packages.

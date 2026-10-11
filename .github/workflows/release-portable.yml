@@ -55,11 +55,47 @@ jobs:
         shell: ${{ matrix.shell }}
         run: ${{ matrix.command }}
 
+      - name: Add version to Windows archive name
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          $source = "artifacts/portable/r2-list-windows-x64.zip"
+          $destination = "artifacts/portable/r2-list-windows-x64-$env:GITHUB_REF_NAME.zip"
+          if (-not (Test-Path -LiteralPath $source)) {
+            throw "Expected build artifact was not found: $source"
+          }
+          Move-Item -LiteralPath $source -Destination $destination
+
+      - name: Add version to macOS archive name
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          archives=(artifacts/portable/r2-list-macos-*.zip)
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "Expected exactly one macOS archive, found ${#archives[@]}." >&2
+            exit 1
+          fi
+          archive="${archives[0]}"
+          mv "$archive" "${archive%.zip}-${GITHUB_REF_NAME}.zip"
+
+      - name: Add version to Linux package name
+        if: matrix.platform == 'linux-x64'
+        shell: bash
+        run: |
+          source="artifacts/portable/r2-list-linux-x64.AppImage"
+          destination="artifacts/portable/r2-list-linux-x64-${GITHUB_REF_NAME}.AppImage"
+          if [[ ! -f "$source" ]]; then
+            echo "Expected build artifact was not found: $source" >&2
+            exit 1
+          fi
+          mv "$source" "$destination"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: portable-${{ matrix.platform }}
-          path: artifacts/portable/*
+          name: portable-${{ matrix.platform }}-${{ github.ref_name }}
+          path: artifacts/portable/*-${{ github.ref_name }}.*
           if-no-files-found: error
           retention-days: 7
 
