@@ -21,16 +21,10 @@ jobs:
         include:
           - platform: windows-x64
             os: windows-latest
-            shell: pwsh
-            command: ./scripts/build-portable-windows.ps1
           - platform: macos
             os: macos-latest
-            shell: bash
-            command: bash scripts/build-portable-macos.sh
           - platform: linux-x64
             os: ubuntu-24.04
-            shell: bash
-            command: bash scripts/build-portable-linux.sh
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out source
@@ -51,9 +45,20 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build portable artifact
-        shell: ${{ matrix.shell }}
-        run: ${{ matrix.command }}
+      - name: Build Windows portable artifact
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: ./scripts/build-portable-windows.ps1
+
+      - name: Build macOS portable artifact
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: bash scripts/build-portable-macos.sh
+
+      - name: Build Linux portable artifact
+        if: matrix.platform == 'linux-x64'
+        shell: bash
+        run: bash scripts/build-portable-linux.sh
 
       - name: Add version to Windows archive name
         if: matrix.platform == 'windows-x64'
