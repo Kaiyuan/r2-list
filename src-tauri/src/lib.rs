@@ -211,6 +211,48 @@ fn remote_absolute_path(relative: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+fn join_remote_path(parent: &str, name: &str) -> String {
+    let parent = parent.trim_matches('/');
+    let name = name.trim_matches('/');
+    if parent.is_empty() {
+        name.to_string()
+    } else {
+        format!("{parent}/{name}")
+    }
+}
+
+fn normalize_smb_endpoint(endpoint: &str, share: &str) -> Result<(String, String), String> {
+    let endpoint = endpoint.trim();
+    let address = if endpoint
+        .get(..6)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("smb://"))
+    {
+        &endpoint[6..]
+    } else {
+        endpoint
+    };
+    let address = address.replace('\\', "/");
+    let mut parts = address
+        .trim_matches('/')
+        .split('/')
+        .filter(|part| !part.is_empty());
+    let host = parts.next().unwrap_or_default().trim();
+    if host.is_empty() {
+        return Err("Enter a valid SMB server address".to_string());
+    }
+    let path_share = parts.next().unwrap_or_default().trim();
+    let explicit_share = share.trim().trim_matches(['/', '\\']);
+    let share = if explicit_share.is_empty() {
+        path_share
+    } else {
+        explicit_share
+    };
+    if share.is_empty() || share.contains(['/', '\\']) {
+        return Err("Enter a valid SMB share name".to_string());
+    }
+    Ok((host.to_string(), share.to_string()))
+}
+
 fn remote_listing(
     client: &dyn RemoteFs,
     root_id: &str,
@@ -222,12 +264,8 @@ fn remote_listing(
         .map_err(|error| error.to_string())?
         .into_iter()
         .map(|entry| {
-            let relative_path = entry
-                .path()
-                .strip_prefix("/")
-                .unwrap_or(entry.path())
-                .to_string_lossy()
-                .replace('\\', "/");
+            let name = entry.name();
+            let relative_path = join_remote_path(current_path, &name);
             let extension = entry.extension().unwrap_or_default().to_ascii_lowercase();
             let modified_ms = entry
                 .metadata()
@@ -237,7 +275,7 @@ fn remote_listing(
                 .unwrap_or_default();
             DirectoryEntry {
                 path: relative_path,
-                name: entry.name(),
+                name,
                 kind: if entry.is_dir() {
                     "directory"
                 } else {
@@ -431,11 +469,9 @@ fn connect_remote_directory(
     let runtime = remote_runtime()?;
     let mut client: Box<dyn RemoteFs> = match protocol.as_str() {
         "smb" => {
-            if share.trim().is_empty() {
-                return Err("Enter an SMB share name".to_string());
-            }
+            let (server, share) = normalize_smb_endpoint(&endpoint, &share)?;
             let credentials = SmbCredentials::default()
-                .server(&endpoint)
+                .server(&server)
                 .share(&share)
                 .username(&username)
                 .password(&password);
@@ -466,11 +502,8 @@ fn connect_remote_directory(
     };
     client.connect().map_err(|error| error.to_string())?;
     let id = if protocol == "smb" {
-        format!(
-            "smb://{}/{}",
-            endpoint.trim_start_matches("smb://"),
-            share.trim_matches('/')
-        )
+        let (server, share) = normalize_smb_endpoint(&endpoint, &share)?;
+        format!("smb://{server}/{share}")
     } else {
         format!("webdav://{endpoint}")
     };
@@ -811,7 +844,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        available_destination, file_kind, list_directory, remote_absolute_path, resolve_path,
+        available_destination, file_kind, join_remote_path, list_directory, normalize_smb_endpoint,
+        remote_absolute_path, resolve_path,
     };
     use std::{
         fs,
@@ -859,6 +893,30 @@ mod tests {
         );
         assert!(remote_absolute_path("../outside").is_err());
         assert!(remote_absolute_path(r"folder\outside").is_err());
+    }
+
+    #[test]
+    fn normalizes_full_smb_urls_and_unc_paths() {
+        assert_eq!(
+            normalize_smb_endpoint("smb://nas.example.com/media", "").unwrap(),
+            ("nas.example.com".to_string(), "media".to_string())
+        );
+        assert_eq!(
+            normalize_smb_endpoint(r"\\nas.example.com\media", "").unwrap(),
+            ("nas.example.com".to_string(), "media".to_string())
+        );
+        assert_eq!(
+            normalize_smb_endpoint("nas.example.com", "media").unwrap(),
+            ("nas.example.com".to_string(), "media".to_string())
+        );
+    }
+
+    #[test]
+    fn builds_cumulative_remote_paths_at_each_depth() {
+        let first = join_remote_path("", "folder");
+        let second = join_remote_path(&first, "nested");
+        assert_eq!(first, "folder");
+        assert_eq!(second, "folder/nested");
     }
 
     #[test]
