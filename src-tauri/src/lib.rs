@@ -1,20 +1,19 @@
 use std::{
     fs,
-    io::Cursor,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
-    time::UNIX_EPOCH,
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use remotefs::{
-    RemoteFs,
-    fs::{ReadOptions, WriteOptions},
+use dav_xml_client::{
+    Resource,
+    dav_xml::{FromXml, elements::Multistatus},
 };
-use remotefs_smb::{SmbCredentials, SmbFs, SmbOptions};
-use remotefs_webdav::{Auth, WebDAVFs};
+use reqwest::{Client as HttpClient, Method, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
+use url::Url;
 
 #[derive(Default)]
 struct LocalDirectory(Mutex<Option<PathBuf>>);
@@ -24,22 +23,197 @@ struct RemoteDirectory(Mutex<Option<RemoteConnection>>);
 
 struct RemoteConnection {
     id: String,
-    client: Box<dyn RemoteFs>,
+    client: WebDavClient,
 }
 
-fn remote_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
-    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    if let Some(runtime) = RUNTIME.get() {
-        return Ok(runtime);
+#[derive(Clone)]
+struct WebDavClient {
+    http: HttpClient,
+    endpoint: Url,
+    username: String,
+    password: String,
+}
+
+struct WebDavMetadata {
+    is_collection: bool,
+    size_bytes: u64,
+}
+
+impl WebDavClient {
+    fn new(endpoint: &str, username: &str, password: &str) -> Result<Self, String> {
+        let endpoint = if endpoint
+            .get(..7)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://"))
+            || endpoint
+                .get(..8)
+                .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"))
+        {
+            endpoint.to_string()
+        } else {
+            format!("https://{endpoint}")
+        };
+        let mut endpoint = Url::parse(&endpoint).map_err(|error| error.to_string())?;
+        if !matches!(endpoint.scheme(), "http" | "https") {
+            return Err("WebDAV address must use HTTP or HTTPS".to_string());
+        }
+        if endpoint.query().is_some() || endpoint.fragment().is_some() {
+            return Err("WebDAV address cannot contain a query or fragment".to_string());
+        }
+        if endpoint.path().is_empty() {
+            endpoint.set_path("/");
+        }
+        let http = HttpClient::builder()
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            http,
+            endpoint,
+            username: username.to_string(),
+            password: password.to_string(),
+        })
     }
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| error.to_string())?;
-    let _ = RUNTIME.set(runtime);
-    RUNTIME
-        .get()
-        .ok_or_else(|| "Could not start network runtime".to_string())
+
+    fn url_for(&self, relative: &str, collection: bool) -> Result<Url, String> {
+        let relative = normalize_remote_relative_path(relative)?;
+        let mut url = self.endpoint.clone();
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .map_err(|_| "Invalid WebDAV address".to_string())?;
+            segments.pop_if_empty();
+            for component in relative
+                .split('/')
+                .filter(|component| !component.is_empty())
+            {
+                segments.push(component);
+            }
+            if collection {
+                segments.push("");
+            }
+        }
+        Ok(url)
+    }
+
+    fn request(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
+        self.http
+            .request(method, url)
+            .basic_auth(&self.username, Some(&self.password))
+    }
+
+    async fn propfind(&self, relative: &str, depth: &str) -> Result<(Url, Vec<Resource>), String> {
+        let url = self.url_for(relative, true)?;
+        let response = self
+            .request(Method::from_bytes(b"PROPFIND").map_err(|error| error.to_string())?, url.clone())
+            .header("Depth", depth)
+            .header("Content-Type", "application/xml; charset=utf-8")
+            .body("<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/></d:prop></d:propfind>")
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        let response = Self::ensure_success(response).await?;
+        let body = response.bytes().await.map_err(|error| error.to_string())?;
+        let multistatus =
+            Multistatus::from_xml(body.to_vec()).map_err(|error| error.to_string())?;
+        Ok((url, Resource::from_multistatus(&multistatus)))
+    }
+
+    async fn list_dir(&self, relative: &str) -> Result<Vec<Resource>, String> {
+        let (request_url, resources) = self.propfind(relative, "1").await?;
+        let request_path = request_url.path().trim_end_matches('/');
+        Ok(resources
+            .into_iter()
+            .filter(|resource| {
+                let candidate = request_url
+                    .join(resource.path())
+                    .map(|url| url.path().trim_end_matches('/').to_string());
+                candidate.as_deref() != Ok(request_path)
+            })
+            .collect())
+    }
+
+    async fn stat(&self, relative: &str) -> Result<WebDavMetadata, String> {
+        let (_, resources) = self.propfind(relative, "0").await?;
+        let resource = resources
+            .into_iter()
+            .next()
+            .ok_or_else(|| "WebDAV server returned no resource properties".to_string())?;
+        Ok(WebDavMetadata {
+            is_collection: resource.is_collection,
+            size_bytes: resource.content_length.unwrap_or_default(),
+        })
+    }
+
+    async fn exists(&self, relative: &str) -> Result<bool, String> {
+        let url = self.url_for(relative, true)?;
+        let response = self
+            .request(Method::from_bytes(b"PROPFIND").map_err(|error| error.to_string())?, url)
+            .header("Depth", "0")
+            .header("Content-Type", "application/xml; charset=utf-8")
+            .body("<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/></d:prop></d:propfind>")
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(false);
+        }
+        Self::ensure_success(response).await?;
+        Ok(true)
+    }
+
+    async fn create_dir(&self, relative: &str) -> Result<(), String> {
+        let url = self.url_for(relative, true)?;
+        let response = self
+            .request(
+                Method::from_bytes(b"MKCOL").map_err(|error| error.to_string())?,
+                url,
+            )
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        Self::ensure_success(response).await.map(|_| ())
+    }
+
+    async fn read_file(&self, relative: &str) -> Result<Vec<u8>, String> {
+        let url = self.url_for(relative, false)?;
+        let response = self
+            .request(Method::GET, url)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        Self::ensure_success(response)
+            .await?
+            .bytes()
+            .await
+            .map(|bytes| bytes.to_vec())
+            .map_err(|error| error.to_string())
+    }
+
+    async fn write_file(&self, relative: &str, bytes: Vec<u8>) -> Result<(), String> {
+        let url = self.url_for(relative, false)?;
+        let response = self
+            .request(Method::PUT, url)
+            .body(bytes)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        Self::ensure_success(response).await.map(|_| ())
+    }
+
+    async fn ensure_success(response: Response) -> Result<Response, String> {
+        let status = response.status();
+        if status.is_success() {
+            Ok(response)
+        } else {
+            let body = response.text().await.unwrap_or_default();
+            Err(if body.trim().is_empty() {
+                format!("WebDAV request failed: HTTP {status}")
+            } else {
+                format!("WebDAV request failed: HTTP {status}: {body}")
+            })
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -53,11 +227,9 @@ struct DirectoryConfig {
     #[serde(default)]
     endpoint: String,
     #[serde(default)]
-    share: String,
-    #[serde(default)]
     username: String,
     #[serde(default)]
-    workgroup: String,
+    password: String,
     #[serde(default)]
     rules: UrlRulesConfig,
 }
@@ -197,18 +369,39 @@ fn display_path(path: &Path) -> String {
     value.into_owned()
 }
 
-fn remote_absolute_path(relative: &str) -> Result<PathBuf, String> {
-    let mut path = PathBuf::from("/");
+fn normalize_remote_relative_path(relative: &str) -> Result<String, String> {
+    let relative = relative.replace('\\', "/");
+    let mut components = Vec::new();
     for component in relative.split('/') {
         if component.is_empty() {
             continue;
         }
-        if component == "." || component == ".." || component.contains('\\') {
+        if component == "." || component == ".." {
             return Err("Invalid remote path".to_string());
         }
-        path.push(component);
+        components.push(component);
     }
-    Ok(path)
+    Ok(components.join("/"))
+}
+
+fn remote_absolute_path(relative: &str) -> Result<PathBuf, String> {
+    let relative = normalize_remote_relative_path(relative)?;
+    if relative.is_empty() {
+        Ok(PathBuf::from("/"))
+    } else {
+        Ok(PathBuf::from(format!("/{relative}")))
+    }
+}
+
+fn remote_child_path(parent: &Path, name: &str) -> Result<PathBuf, String> {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+        return Err("Invalid remote path".to_string());
+    }
+    let parent = parent.to_string_lossy();
+    Ok(PathBuf::from(format!(
+        "{}/{name}",
+        parent.trim_end_matches('/')
+    )))
 }
 
 fn join_remote_path(parent: &str, name: &str) -> String {
@@ -221,68 +414,40 @@ fn join_remote_path(parent: &str, name: &str) -> String {
     }
 }
 
-fn normalize_smb_endpoint(endpoint: &str, share: &str) -> Result<(String, String), String> {
-    let endpoint = endpoint.trim();
-    let address = if endpoint
-        .get(..6)
-        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("smb://"))
-    {
-        &endpoint[6..]
-    } else {
-        endpoint
-    };
-    let address = address.replace('\\', "/");
-    let mut parts = address
-        .trim_matches('/')
-        .split('/')
-        .filter(|part| !part.is_empty());
-    let host = parts.next().unwrap_or_default().trim();
-    if host.is_empty() {
-        return Err("Enter a valid SMB server address".to_string());
-    }
-    let path_share = parts.next().unwrap_or_default().trim();
-    let explicit_share = share.trim().trim_matches(['/', '\\']);
-    let share = if explicit_share.is_empty() {
-        path_share
-    } else {
-        explicit_share
-    };
-    if share.is_empty() || share.contains(['/', '\\']) {
-        return Err("Enter a valid SMB share name".to_string());
-    }
-    Ok((host.to_string(), share.to_string()))
-}
-
-fn remote_listing(
-    client: &dyn RemoteFs,
+async fn remote_listing(
+    client: &WebDavClient,
     root_id: &str,
     current_path: &str,
 ) -> Result<DirectoryListing, String> {
-    let current = remote_absolute_path(current_path)?;
+    let current_path = normalize_remote_relative_path(current_path)?;
     let mut entries = client
-        .list_dir(&current)
-        .map_err(|error| error.to_string())?
+        .list_dir(&current_path)
+        .await?
         .into_iter()
-        .map(|entry| {
-            let name = entry.name();
-            let relative_path = join_remote_path(current_path, &name);
-            let extension = entry.extension().unwrap_or_default().to_ascii_lowercase();
-            let modified_ms = entry
-                .metadata()
-                .modified
-                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-                .map(|value| value.as_millis().min(u64::MAX as u128) as u64)
+        .map(|resource| {
+            let name = resource.name().to_string();
+            let relative_path = join_remote_path(&current_path, &name);
+            let extension = Path::new(&name)
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let modified_ms = resource
+                .last_modified
+                .map(SystemTime::from)
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|modified| modified.as_millis().min(u64::MAX as u128) as u64)
                 .unwrap_or_default();
             DirectoryEntry {
                 path: relative_path,
-                name,
-                kind: if entry.is_dir() {
+                name: name.clone(),
+                kind: if resource.is_collection {
                     "directory"
                 } else {
                     file_kind(&extension)
                 }
                 .to_string(),
-                size_bytes: entry.metadata().size.unwrap_or_default(),
+                size_bytes: resource.content_length.unwrap_or_default(),
                 modified_ms,
                 extension,
             }
@@ -296,7 +461,7 @@ fn remote_listing(
     });
     Ok(DirectoryListing {
         root_path: root_id.to_string(),
-        current_path: current_path.to_string(),
+        current_path,
         entries,
     })
 }
@@ -452,13 +617,10 @@ fn open_directory(
 }
 
 #[tauri::command]
-fn connect_remote_directory(
-    protocol: String,
+async fn connect_remote_directory(
     endpoint: String,
-    share: String,
     username: String,
     password: String,
-    workgroup: String,
     state: State<'_, RemoteDirectory>,
     local: State<'_, LocalDirectory>,
 ) -> Result<DirectoryListing, String> {
@@ -466,48 +628,9 @@ fn connect_remote_directory(
     if endpoint.is_empty() {
         return Err("Enter a server address".to_string());
     }
-    let runtime = remote_runtime()?;
-    let mut client: Box<dyn RemoteFs> = match protocol.as_str() {
-        "smb" => {
-            let (server, share) = normalize_smb_endpoint(&endpoint, &share)?;
-            let credentials = SmbCredentials::default()
-                .server(&server)
-                .share(&share)
-                .username(&username)
-                .password(&password);
-            let credentials = if workgroup.trim().is_empty() {
-                credentials
-            } else {
-                credentials.workgroup(workgroup.trim())
-            };
-            Box::new(
-                SmbFs::try_new(credentials, SmbOptions::default())
-                    .map_err(|error| error.to_string())?
-                    .into_blocking(runtime.handle().clone()),
-            )
-        }
-        "webdav" => {
-            let url = if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
-                endpoint.clone()
-            } else {
-                format!("https://{endpoint}")
-            };
-            Box::new(
-                WebDAVFs::new(&url, Auth::basic(&username, &password))
-                    .map_err(|error| error.to_string())?
-                    .into_blocking(runtime.handle().clone()),
-            )
-        }
-        _ => return Err("Unsupported network protocol".to_string()),
-    };
-    client.connect().map_err(|error| error.to_string())?;
-    let id = if protocol == "smb" {
-        let (server, share) = normalize_smb_endpoint(&endpoint, &share)?;
-        format!("smb://{server}/{share}")
-    } else {
-        format!("webdav://{endpoint}")
-    };
-    let listing = remote_listing(client.as_ref(), &id, "")?;
+    let client = WebDavClient::new(&endpoint, &username, &password)?;
+    let id = format!("webdav://{endpoint}");
+    let listing = remote_listing(&client, &id, "").await?;
     *state
         .0
         .lock()
@@ -521,22 +644,25 @@ fn connect_remote_directory(
 }
 
 #[tauri::command]
-fn read_remote_directory(
+async fn read_remote_directory(
     path: String,
     state: State<'_, RemoteDirectory>,
 ) -> Result<DirectoryListing, String> {
-    let connection = state
-        .0
-        .lock()
-        .map_err(|_| "Remote directory state unavailable".to_string())?;
-    let connection = connection
-        .as_ref()
-        .ok_or_else(|| "Connect to a network location first".to_string())?;
-    remote_listing(connection.client.as_ref(), &connection.id, &path)
+    let (id, client) = {
+        let connection = state
+            .0
+            .lock()
+            .map_err(|_| "Remote directory state unavailable".to_string())?;
+        let connection = connection
+            .as_ref()
+            .ok_or_else(|| "Connect to a network location first".to_string())?;
+        (connection.id.clone(), connection.client.clone())
+    };
+    remote_listing(&client, &id, &path).await
 }
 
 #[tauri::command]
-fn create_remote_directory(
+async fn create_remote_directory(
     path: String,
     name: String,
     state: State<'_, RemoteDirectory>,
@@ -545,35 +671,38 @@ fn create_remote_directory(
     if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
         return Err("Enter a valid folder name".to_string());
     }
-    let connection = state
-        .0
-        .lock()
-        .map_err(|_| "Remote directory state unavailable".to_string())?;
-    let connection = connection
-        .as_ref()
-        .ok_or_else(|| "Connect to a network location first".to_string())?;
-    let target = remote_absolute_path(&path)?.join(name);
-    connection
-        .client
-        .create_dir(&target, None)
-        .map_err(|error| error.to_string())?;
-    remote_listing(connection.client.as_ref(), &connection.id, &path)
+    let (id, client) = {
+        let connection = state
+            .0
+            .lock()
+            .map_err(|_| "Remote directory state unavailable".to_string())?;
+        let connection = connection
+            .as_ref()
+            .ok_or_else(|| "Connect to a network location first".to_string())?;
+        (connection.id.clone(), connection.client.clone())
+    };
+    let target = remote_child_path(&remote_absolute_path(&path)?, name)?;
+    client.create_dir(&target.to_string_lossy()).await?;
+    remote_listing(&client, &id, &path).await
 }
 
 #[tauri::command]
-fn import_remote_files(
+async fn import_remote_files(
     paths: Vec<String>,
     directory: String,
     state: State<'_, RemoteDirectory>,
 ) -> Result<DirectoryListing, String> {
-    let connection = state
-        .0
-        .lock()
-        .map_err(|_| "Remote directory state unavailable".to_string())?;
-    let connection = connection
-        .as_ref()
-        .ok_or_else(|| "Connect to a network location first".to_string())?;
-    let target_directory = remote_absolute_path(&directory)?;
+    let (id, client) = {
+        let connection = state
+            .0
+            .lock()
+            .map_err(|_| "Remote directory state unavailable".to_string())?;
+        let connection = connection
+            .as_ref()
+            .ok_or_else(|| "Connect to a network location first".to_string())?;
+        (connection.id.clone(), connection.client.clone())
+    };
+    let target_directory = normalize_remote_relative_path(&directory)?;
     for source in paths {
         let source = fs::canonicalize(source).map_err(|error| error.to_string())?;
         if !source.is_file() {
@@ -582,13 +711,10 @@ fn import_remote_files(
         let name = source
             .file_name()
             .ok_or_else(|| "The selected file has no name".to_string())?;
-        let mut target = target_directory.join(name);
+        let name = name.to_string_lossy();
+        let mut target = join_remote_path(&target_directory, &name);
         let mut suffix = 2;
-        while connection
-            .client
-            .exists(&target)
-            .map_err(|error| error.to_string())?
-        {
+        while client.exists(&target).await? {
             let stem = source.file_stem().unwrap_or_default().to_string_lossy();
             let extension = source.extension().map(|value| value.to_string_lossy());
             let renamed = if let Some(extension) = extension {
@@ -596,45 +722,38 @@ fn import_remote_files(
             } else {
                 format!("{stem} ({suffix})")
             };
-            target = target_directory.join(renamed);
+            target = join_remote_path(&target_directory, &renamed);
             suffix += 1;
         }
         let bytes = fs::read(&source).map_err(|error| error.to_string())?;
-        connection
-            .client
-            .write_file(
-                &target,
-                &WriteOptions::default().size_hint(bytes.len() as u64),
-                &mut Cursor::new(bytes),
-            )
-            .map_err(|error| error.to_string())?;
+        client.write_file(&target, bytes).await?;
     }
-    remote_listing(connection.client.as_ref(), &connection.id, &directory)
+    remote_listing(&client, &id, &directory).await
 }
 
 #[tauri::command]
-fn read_remote_preview(
+async fn read_remote_preview(
     path: String,
     state: State<'_, RemoteDirectory>,
 ) -> Result<PreviewData, String> {
     const MAX_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
-    let connection = state
-        .0
-        .lock()
-        .map_err(|_| "Remote directory state unavailable".to_string())?;
-    let connection = connection
-        .as_ref()
-        .ok_or_else(|| "Connect to a network location first".to_string())?;
-    let path = remote_absolute_path(&path)?;
-    let metadata = connection
-        .client
-        .stat(&path)
-        .map_err(|error| error.to_string())?;
-    if !metadata.is_file() {
+    let client = {
+        let connection = state
+            .0
+            .lock()
+            .map_err(|_| "Remote directory state unavailable".to_string())?;
+        connection
+            .as_ref()
+            .ok_or_else(|| "Connect to a network location first".to_string())?
+            .client
+            .clone()
+    };
+    let path = normalize_remote_relative_path(&path)?;
+    let metadata = client.stat(&path).await?;
+    if metadata.is_collection {
         return Err("The selected path is not a file".to_string());
     }
-    let extension = metadata
-        .path
+    let extension = Path::new(&path)
         .extension()
         .and_then(|value| value.to_str())
         .unwrap_or("")
@@ -644,17 +763,13 @@ fn read_remote_preview(
         "document" => 16 * 1024 * 1024,
         _ => MAX_PREVIEW_BYTES,
     };
-    if metadata.metadata().size.unwrap_or_default() > preview_limit {
+    if metadata.size_bytes > preview_limit {
         return Err(format!(
             "This file exceeds the {} MB preview limit",
             preview_limit / 1024 / 1024
         ));
     }
-    let mut bytes = Vec::new();
-    connection
-        .client
-        .read_file(&path, &ReadOptions::default(), &mut bytes)
-        .map_err(|error| error.to_string())?;
+    let bytes = client.read_file(&path).await?;
     Ok(PreviewData {
         mime_type: mime_type(&extension).to_string(),
         size_bytes: bytes.len() as u64,
@@ -844,12 +959,15 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        available_destination, file_kind, join_remote_path, list_directory, normalize_smb_endpoint,
-        remote_absolute_path, resolve_path,
+        WebDavClient, available_destination, file_kind, join_remote_path, list_directory,
+        remote_absolute_path, remote_child_path, resolve_path,
     };
     use std::{
         fs,
+        io::{Read, Write},
+        net::TcpListener,
         path::PathBuf,
+        thread,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -891,24 +1009,80 @@ mod tests {
             remote_absolute_path("photos/2026").unwrap(),
             PathBuf::from("/photos/2026")
         );
+        assert_eq!(
+            remote_absolute_path(r"photos\2026\nested").unwrap(),
+            PathBuf::from("/photos/2026/nested")
+        );
         assert!(remote_absolute_path("../outside").is_err());
-        assert!(remote_absolute_path(r"folder\outside").is_err());
+        assert!(remote_absolute_path(r"photos\..\outside").is_err());
     }
 
     #[test]
-    fn normalizes_full_smb_urls_and_unc_paths() {
+    fn keeps_remote_paths_posix_style_at_each_depth() {
         assert_eq!(
-            normalize_smb_endpoint("smb://nas.example.com/media", "").unwrap(),
-            ("nas.example.com".to_string(), "media".to_string())
+            remote_absolute_path("photos/2026")
+                .unwrap()
+                .to_string_lossy(),
+            "/photos/2026"
         );
         assert_eq!(
-            normalize_smb_endpoint(r"\\nas.example.com\media", "").unwrap(),
-            ("nas.example.com".to_string(), "media".to_string())
+            remote_child_path(&remote_absolute_path("photos/2026").unwrap(), "nested")
+                .unwrap()
+                .to_string_lossy(),
+            "/photos/2026/nested"
         );
+    }
+
+    #[test]
+    fn builds_nested_webdav_urls_beneath_the_configured_endpoint() {
+        let client =
+            WebDavClient::new("http://dav.example.test/dav/files/user/", "alice", "secret")
+                .unwrap();
+
+        let url = client
+            .url_for(r"folder with space\nested\third", true)
+            .unwrap();
+
         assert_eq!(
-            normalize_smb_endpoint("nas.example.com", "media").unwrap(),
-            ("nas.example.com".to_string(), "media".to_string())
+            url.as_str(),
+            "http://dav.example.test/dav/files/user/folder%20with%20space/nested/third/"
         );
+    }
+
+    #[tokio::test]
+    async fn lists_third_level_webdav_directories_using_the_endpoint_base_path() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/files/user/one/two/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response><d:response><d:href>/dav/files/user/one/two/three/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"#;
+        let response_body = xml.to_string();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let read = stream.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..read]).to_string();
+            write!(
+                stream,
+                "HTTP/1.1 207 Multi-Status\r\nContent-Type: application/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            )
+            .unwrap();
+            request
+        });
+        let client = WebDavClient::new(
+            &format!("http://{address}/dav/files/user"),
+            "alice",
+            "secret",
+        )
+        .unwrap();
+
+        let entries = client.list_dir("one/two").await.unwrap();
+        let request = server.join().unwrap();
+
+        assert!(request.starts_with("PROPFIND /dav/files/user/one/two/ HTTP/1.1"));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name(), "three");
+        assert!(entries[0].is_collection);
     }
 
     #[test]

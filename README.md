@@ -53,4 +53,4 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 双击文件可打开大预览，右侧面板显示当前选中文件。支持常见图片、UTF-8 文本、Markdown、CSV/TSV、PDF、DOCX、XLSX、PPTX，以及 WebView 可解码的音频/视频。文本预览限制为 2 MB，Office 文件限制为 16 MB；大图片、PDF 和音视频通过受限的本地文件 URL 读取。任意专有/二进制格式、旧版 Office 格式以及当前 WebView 不支持的媒体 codec 无法保证预览。
 
-支持本地目录、SMB 共享和 WebDAV 服务器；添加网络位置时输入服务器地址及登录信息。网络位置、地址和用户名会保存在用户配置中，密码不会保存，应用重启后需要重新输入密码连接。SMB 使用 SMB 2/3 协议。应用只生成和复制 Cloudflare R2 URL，不负责向 R2 上传或同步对象。
+支持本地目录和 WebDAV 服务器；WebDAV 由应用内置的 Rust HTTP 客户端直接访问，不依赖操作系统 WebDAV 挂载。添加位置时输入服务器地址及登录信息；WebDAV 地址、用户名和密码会保存在用户配置中，应用重启后会自动重新连接。应用只生成和复制 Cloudflare R2 URL，不负责向 R2 上传或同步对象。

@@ -11,6 +11,7 @@ import { buildObjectUrl, formatLinks, type ShareFormat, type UrlRules } from "./
 import { detectLocale, formatItemCount, isLocale, locales, translate, type Locale, type TranslationKey } from "./i18n";
 import { resolveTheme, type ThemePreference } from "./theme";
 import { getVersionStatus } from "./version";
+import { buildRemoteConfig, buildRemoteLocationLabel } from "./networkConfig";
 import { PreviewContent } from "./PreviewContent";
 import "./App.css";
 import "./preferences.css";
@@ -19,8 +20,8 @@ type EntryKind = "directory" | "image" | "video" | "audio" | "text" | "document"
 type Entry = { path: string; name: string; kind: EntryKind; sizeBytes: number; modifiedMs: number; extension: string };
 type DirectoryListing = { rootPath: string; currentPath: string; entries: Entry[] };
 type PreviewData = { mimeType: string; dataBase64: string; sizeBytes: number };
-type DirectoryConfig = { path: string; rules: UrlRules; kind?: "local" | "smb" | "webdav"; label?: string; endpoint?: string; share?: string; username?: string; workgroup?: string };
-type NetworkDraft = { kind: "smb" | "webdav"; endpoint: string; share: string; username: string; workgroup: string; password: string };
+type DirectoryConfig = { path: string; rules: UrlRules; kind?: "local" | "webdav"; label?: string; endpoint?: string; username?: string; password?: string };
+type NetworkDraft = { endpoint: string; username: string; password: string };
 type UserConfig = { directories: DirectoryConfig[]; activeDirectory: string | null; locale: Locale | null; theme: ThemePreference | null };
 type MenuState = { x: number; y: number; entry: Entry } | null;
 type UpdateStatus = { status: "checking" | "up-to-date" | "update-available" | "error"; latest: string | null; message: string };
@@ -95,7 +96,7 @@ function App() {
   const [viewMode, setViewMode] = useState<"list" | "thumbnails">("list");
   const [locationMenuOpen, setLocationMenuOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(false);
-  const [networkDraft, setNetworkDraft] = useState<NetworkDraft>({ kind: "smb", endpoint: "", share: "", username: "", workgroup: "", password: "" });
+  const [networkDraft, setNetworkDraft] = useState<NetworkDraft>({ endpoint: "", username: "", password: "" });
   const [directoryConfigs, setDirectoryConfigs] = useState<DirectoryConfig[]>([]);
   const [activeDirectory, setActiveDirectory] = useState("");
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -143,14 +144,17 @@ function App() {
           try { return { ...initialRules, ...JSON.parse(localStorage.getItem("r2-list-url-rules") ?? "{}") as Partial<UrlRules> }; }
           catch { return initialRules; }
         })();
-        const directories = savedConfig.directories?.length
-          ? savedConfig.directories
+        const savedDirectories = savedConfig.directories?.filter((directory) => String(directory.kind) !== "smb") ?? [];
+        const directories = savedDirectories.length
+          ? savedDirectories
           : (localStorage.getItem("r2-list-local-directory") ? [{ path: localStorage.getItem("r2-list-local-directory")!, rules: migratedRules }] : []);
         setDirectoryConfigs(directories);
         if (isLocale(savedConfig.locale)) setLocale(savedConfig.locale);
         if (savedConfig.theme === "system" || savedConfig.theme === "light" || savedConfig.theme === "dark") setThemePreference(savedConfig.theme);
-        const savedPath = savedConfig.activeDirectory ?? directories[0]?.path ?? await invoke<string | null>("default_directory");
-        if (savedPath) await loadDirectory(savedPath);
+        const savedPath = directories.some((directory) => directory.path === savedConfig.activeDirectory)
+          ? savedConfig.activeDirectory!
+          : directories[0]?.path ?? await invoke<string | null>("default_directory");
+        if (savedPath) await loadDirectory(savedPath, directories);
         setConfigLoaded(true);
       } catch (error) {
         if (active) setToast(`${t("directoryLoadFailed")}: ${String(error)}`);
@@ -318,25 +322,69 @@ function App() {
     const separator = rootPath.endsWith("\\") || rootPath.endsWith("/") ? "" : pathSeparator;
     return convertFileSrc(`${rootPath}${separator}${entry.path.replace(/\//g, pathSeparator)}`);
   }
-  function openNetworkForm(kind: "smb" | "webdav", config?: DirectoryConfig) {
+  function openNetworkForm(config?: DirectoryConfig) {
     setNetworkDraft({
-      kind,
       endpoint: config?.endpoint ?? "",
-      share: config?.share ?? "",
       username: config?.username ?? "",
-      workgroup: config?.workgroup ?? "",
-      password: "",
+      password: config?.password ?? "",
     });
     setLocationMenuOpen(false);
     setNetworkOpen(true);
   }
+  async function connectRemoteWithConfig(connection: NetworkDraft) {
+    const config = buildRemoteConfig(connection);
+    setLoadingDirectory(true);
+    try {
+      const listing = await invoke<DirectoryListing>("connect_remote_directory", {
+        endpoint: config.endpoint,
+        username: config.username,
+        password: config.password,
+      });
+      setRootPath(listing.rootPath);
+      setActiveDirectory(listing.rootPath);
+      setCurrentPath(listing.currentPath);
+      setEntries(listing.entries);
+      setSelectedPath(listing.entries.find((entry) => entry.kind !== "directory")?.path ?? "");
+      setSearch("");
+      const label = buildRemoteLocationLabel(config.endpoint);
+      setDirectoryConfigs((current) => current.some((directory) => directory.path === listing.rootPath)
+        ? current.map((directory) => directory.path === listing.rootPath ? {
+            ...directory,
+          kind: "webdav",
+            label,
+            endpoint: config.endpoint,
+            username: config.username,
+            password: config.password,
+          } : directory)
+        : [...current, {
+            path: listing.rootPath,
+            kind: "webdav",
+            label,
+            endpoint: config.endpoint,
+            username: config.username,
+            password: config.password,
+            rules: initialRules,
+          }]);
+      setNetworkOpen(false);
+      setNetworkDraft((draft) => ({ ...draft, password: config.password }));
+      setToast(t("networkConnected"));
+    } catch (error) {
+      setToast(`${t("directoryLoadFailed")}: ${String(error)}`);
+    } finally {
+      setLoadingDirectory(false);
+    }
+  }
   function openGithubProject() {
     void openUrl(GITHUB_REPO_URL);
   }
-  async function loadDirectory(path: string) {
-    const savedNetwork = directoryConfigs.find((directory) => directory.path === path && directory.kind && directory.kind !== "local");
+  async function loadDirectory(path: string, configs: DirectoryConfig[] = directoryConfigs) {
+    const savedNetwork = configs.find((directory) => directory.path === path && directory.kind === "webdav");
     if (savedNetwork) {
-      openNetworkForm(savedNetwork.kind as "smb" | "webdav", savedNetwork);
+      await connectRemoteWithConfig({
+        endpoint: savedNetwork.endpoint ?? "",
+        username: savedNetwork.username ?? "",
+        password: savedNetwork.password ?? "",
+      });
       return;
     }
     setLoadingDirectory(true);
@@ -366,33 +414,7 @@ function App() {
   }
   async function connectRemote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoadingDirectory(true);
-    try {
-      const listing = await invoke<DirectoryListing>("connect_remote_directory", {
-        protocol: networkDraft.kind,
-        endpoint: networkDraft.endpoint,
-        share: networkDraft.share,
-        username: networkDraft.username,
-        password: networkDraft.password,
-        workgroup: networkDraft.workgroup,
-      });
-      setRootPath(listing.rootPath);
-      setActiveDirectory(listing.rootPath);
-      setCurrentPath(listing.currentPath);
-      setEntries(listing.entries);
-      setSelectedPath(listing.entries.find((entry) => entry.kind !== "directory")?.path ?? "");
-      setSearch("");
-      setDirectoryConfigs((current) => current.some((directory) => directory.path === listing.rootPath)
-        ? current.map((directory) => directory.path === listing.rootPath ? { ...directory, kind: networkDraft.kind, label: networkDraft.kind === "smb" ? `${networkDraft.endpoint}/${networkDraft.share}` : networkDraft.endpoint, endpoint: networkDraft.endpoint, share: networkDraft.share, username: networkDraft.username, workgroup: networkDraft.workgroup } : directory)
-        : [...current, { path: listing.rootPath, kind: networkDraft.kind, label: networkDraft.kind === "smb" ? `${networkDraft.endpoint}/${networkDraft.share}` : networkDraft.endpoint, endpoint: networkDraft.endpoint, share: networkDraft.share, username: networkDraft.username, workgroup: networkDraft.workgroup, rules: initialRules }]);
-      setNetworkOpen(false);
-      setNetworkDraft((draft) => ({ ...draft, password: "" }));
-      setToast(t("networkConnected"));
-    } catch (error) {
-      setToast(`${t("directoryLoadFailed")}: ${String(error)}`);
-    } finally {
-      setLoadingDirectory(false);
-    }
+    await connectRemoteWithConfig(networkDraft);
   }
   async function removeDirectory(path: string) {
     const remaining = directoryConfigs.filter((directory) => directory.path !== path);
@@ -501,7 +523,7 @@ function App() {
         <div className="brand-lockup"><div className="brand-mark"><Cloud size={19} strokeWidth={2.3} /></div><div><strong>R2 List</strong><span>{t("objectWorkspace")}</span></div><button className="icon-button sidebar-more" aria-label={t("aboutApp")} title={t("aboutApp")} onClick={() => setAboutOpen(true)}><MoreHorizontal size={18} /></button></div>
         <div className="sidebar-section"><div className="section-label">{t("workspace")}</div><button className="nav-item active"><HardDrive size={17} /><span>{t("files")}</span><span className="nav-count">{entries.length}</span></button><button className="nav-item" onClick={openRules}><Settings2 size={17} /><span>{t("urlRules")}</span></button></div>
         <div className="sidebar-section locations-section"><div className="section-heading"><span className="section-label">{t("locations")}</span><button className="icon-button tiny" aria-label={t("addLocation")} title={t("addLocation")} onClick={() => setLocationMenuOpen((open) => !open)}><Plus size={15} /></button></div>
-          {locationMenuOpen && <div className="location-add-menu"><button onClick={() => { setLocationMenuOpen(false); void chooseDirectory(); }}><HardDrive size={16} /><span>{t("localFolderOption")}</span></button><button onClick={() => openNetworkForm("smb")}><Cloud size={16} /><span>{t("smbOption")}</span></button><button onClick={() => openNetworkForm("webdav")}><Cloud size={16} /><span>{t("webdavOption")}</span></button></div>}
+          {locationMenuOpen && <div className="location-add-menu"><button onClick={() => { setLocationMenuOpen(false); void chooseDirectory(); }}><HardDrive size={16} /><span>{t("localFolderOption")}</span></button><button onClick={() => openNetworkForm()}><Cloud size={16} /><span>{t("webdavOption")}</span></button></div>}
           {directoryConfigs.map((directory) => <div className={`location-entry ${directory.path === activeDirectory ? "active" : ""}`} key={directory.path}><button className="location-item" onClick={() => void loadDirectory(directory.path)}><span className={`location-dot ${directory.kind && directory.kind !== "local" ? "remote-dot" : "local-dot"}`} /><span className="location-copy"><strong>{directory.label || directory.path.split(/[\\/]/).filter(Boolean).pop()}</strong><small>{directory.kind && directory.kind !== "local" ? directory.kind.toUpperCase() : directory.path}</small></span></button><button className="location-action" aria-label={t("removeLocation")} title={t("removeLocation")} onClick={() => void removeDirectory(directory.path)}><Trash2 size={15} /></button></div>)}
           <button className="add-location" onClick={() => setLocationMenuOpen((open) => !open)}><Plus size={14} /> {t("addLocation")}</button>
         </div>
@@ -544,7 +566,7 @@ function App() {
 
       {previewEntry && <div className="file-preview-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setPreviewEntry(null)}><section className="file-preview-modal" role="dialog" aria-modal="true" aria-label={`${t("preview")}: ${previewEntry.name}`}><header className="file-preview-header"><div className="file-preview-heading"><span className="section-label">{t("preview")}</span><h2>{previewEntry.name}</h2></div><button className="icon-button" aria-label={t("close")} title={t("close")} onClick={() => setPreviewEntry(null)}><X size={18} /></button></header><div className="file-preview-content"><PreviewContent entry={previewEntry} bytes={previewBytes} objectUrl={previewUrl} loading={previewLoading} error={previewError} t={t} /></div><footer className="file-preview-footer"><span>{previewEntry.extension.toUpperCase() || "FILE"}</span><span>{formatBytes(previewEntry.sizeBytes)}</span></footer></section></div>}
       {menu && <div className="context-menu" style={{ left: menu.x, top: menu.y }} onClick={(event) => event.stopPropagation()}><div className="context-title">{t("copyLinks")} <span>{menu.entry.kind === "directory" ? t("directory") : t("file")}</span></div><button onClick={() => copyLinks(menu.entry, "url")}><Copy size={15} /><span>{t("plainTextUrl")}</span><kbd>TXT</kbd></button><button onClick={() => copyLinks(menu.entry, "markdown")}><FileText size={15} /><span>{t("markdown")}</span><kbd>MD</kbd></button><button onClick={() => copyLinks(menu.entry, "html")}><Archive size={15} /><span>{t("htmlLinks")}</span><kbd>HTML</kbd></button>{menu.entry.kind === "directory" && <div className="context-hint">{t("recursiveCopyHint")}</div>}</div>}
-      {networkOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setNetworkOpen(false)}><form className="settings-modal network-modal" onSubmit={connectRemote}><div className="modal-heading"><div><span className="section-label">{t("locations")}</span><h2>{networkDraft.kind === "smb" ? t("connectSmb") : t("connectWebdav")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setNetworkOpen(false)}><X size={18} /></button></div><label className="field-label">{t("serverAddress")}<input autoFocus required value={networkDraft.endpoint} onChange={(event) => setNetworkDraft({ ...networkDraft, endpoint: event.currentTarget.value })} placeholder={networkDraft.kind === "smb" ? "smb://server.example.com/share" : "https://dav.example.com/remote.php/dav/files/user"} /></label>{networkDraft.kind === "smb" && <><label className="field-label">{t("shareName")}<input value={networkDraft.share} onChange={(event) => setNetworkDraft({ ...networkDraft, share: event.currentTarget.value })} placeholder={t("optional")} /></label><label className="field-label">{t("workgroup")}<input value={networkDraft.workgroup} onChange={(event) => setNetworkDraft({ ...networkDraft, workgroup: event.currentTarget.value })} /></label></>}<label className="field-label">{t("username")}<input autoComplete="username" value={networkDraft.username} onChange={(event) => setNetworkDraft({ ...networkDraft, username: event.currentTarget.value })} /></label><label className="field-label">{t("password")}<input type="password" autoComplete="current-password" value={networkDraft.password} onChange={(event) => setNetworkDraft({ ...networkDraft, password: event.currentTarget.value })} /></label><div className="modal-actions"><button type="button" className="button-secondary" onClick={() => setNetworkOpen(false)}>{t("cancel")}</button><button className="button-primary" type="submit" disabled={loadingDirectory}><Cloud size={15} />{t("connect")}</button></div></form></div>}
+      {networkOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setNetworkOpen(false)}><form className="settings-modal network-modal" onSubmit={connectRemote}><div className="modal-heading"><div><span className="section-label">{t("locations")}</span><h2>{t("connectWebdav")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setNetworkOpen(false)}><X size={18} /></button></div><label className="field-label">{t("serverAddress")}<input autoFocus required value={networkDraft.endpoint} onChange={(event) => setNetworkDraft({ ...networkDraft, endpoint: event.currentTarget.value })} placeholder="https://dav.example.com/remote.php/dav/files/user" /></label><label className="field-label">{t("username")}<input autoComplete="username" value={networkDraft.username} onChange={(event) => setNetworkDraft({ ...networkDraft, username: event.currentTarget.value })} /></label><label className="field-label">{t("password")}<input type="password" autoComplete="current-password" value={networkDraft.password} onChange={(event) => setNetworkDraft({ ...networkDraft, password: event.currentTarget.value })} /></label><div className="modal-actions"><button type="button" className="button-secondary" onClick={() => setNetworkOpen(false)}>{t("cancel")}</button><button className="button-primary" type="submit" disabled={loadingDirectory}><Cloud size={15} />{t("connect")}</button></div></form></div>}
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSettingsOpen(false)}><form className="settings-modal" onSubmit={saveRules}>
         <div className="modal-heading"><div><span className="section-label">{t("linkConfiguration")}</span><h2>{t("rulesTitle")}</h2></div><button type="button" className="icon-button" aria-label={t("close")} onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
         <p className="modal-description">{t("rulesDescription")}</p>
