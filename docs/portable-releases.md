@@ -5,7 +5,7 @@ Each platform script builds only for the current host. Build prerequisites are N
 ## Artifacts
 
 - Local builds use `r2-list-windows-x64.zip`, `r2-list-macos-<architecture>.zip`, and `r2-list-linux-<architecture>.AppImage` (for Linux: `x64` or `arm64`).
-- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.1.zip`, `r2-list-macos-arm64-v0.0.1.zip`, `r2-list-linux-x64-v0.0.1.AppImage`, and `r2-list-linux-arm64-v0.0.1.AppImage`.
+- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.2.zip`, `r2-list-macos-arm64-v0.0.2.zip`, `r2-list-linux-x64-v0.0.2.AppImage`, and `r2-list-linux-arm64-v0.0.2.AppImage`.
 - macOS architecture is detected from the build runner (`arm64` or `x64`).
 
 These are portable outputs, not installers. Windows still requires the WebView2 Runtime; it is included with current Windows releases on most machines. Linux AppImage execution may require FUSE 2 and the host WebKit/GTK libraries. macOS builds are unsigned unless signing credentials are configured, so Gatekeeper may require the user to approve the app manually. Windows SmartScreen may also display a warning for unsigned binaries.
