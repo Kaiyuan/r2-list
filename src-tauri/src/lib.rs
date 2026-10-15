@@ -102,8 +102,13 @@ impl WebDavClient {
             .basic_auth(&self.username, Some(&self.password))
     }
 
-    async fn propfind(&self, relative: &str, depth: &str) -> Result<(Url, Vec<Resource>), String> {
-        let url = self.url_for(relative, true)?;
+    async fn propfind(
+        &self,
+        relative: &str,
+        depth: &str,
+        collection: bool,
+    ) -> Result<(Url, Vec<Resource>), String> {
+        let url = self.url_for(relative, collection)?;
         let response = self
             .request(Method::from_bytes(b"PROPFIND").map_err(|error| error.to_string())?, url.clone())
             .header("Depth", depth)
@@ -111,16 +116,16 @@ impl WebDavClient {
             .body("<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/></d:prop></d:propfind>")
             .send()
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(request_error)?;
         let response = Self::ensure_success(response).await?;
-        let body = response.bytes().await.map_err(|error| error.to_string())?;
+        let body = response.bytes().await.map_err(request_error)?;
         let multistatus =
             Multistatus::from_xml(body.to_vec()).map_err(|error| error.to_string())?;
         Ok((url, Resource::from_multistatus(&multistatus)))
     }
 
     async fn list_dir(&self, relative: &str) -> Result<Vec<Resource>, String> {
-        let (request_url, resources) = self.propfind(relative, "1").await?;
+        let (request_url, resources) = self.propfind(relative, "1", true).await?;
         let request_path = request_url.path().trim_end_matches('/');
         Ok(resources
             .into_iter()
@@ -134,7 +139,7 @@ impl WebDavClient {
     }
 
     async fn stat(&self, relative: &str) -> Result<WebDavMetadata, String> {
-        let (_, resources) = self.propfind(relative, "0").await?;
+        let (_, resources) = self.propfind(relative, "0", false).await?;
         let resource = resources
             .into_iter()
             .next()
@@ -146,7 +151,7 @@ impl WebDavClient {
     }
 
     async fn exists(&self, relative: &str) -> Result<bool, String> {
-        let url = self.url_for(relative, true)?;
+        let url = self.url_for(relative, false)?;
         let response = self
             .request(Method::from_bytes(b"PROPFIND").map_err(|error| error.to_string())?, url)
             .header("Depth", "0")
@@ -154,7 +159,7 @@ impl WebDavClient {
             .body("<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/></d:prop></d:propfind>")
             .send()
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(request_error)?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(false);
         }
@@ -171,7 +176,7 @@ impl WebDavClient {
             )
             .send()
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(request_error)?;
         Self::ensure_success(response).await.map(|_| ())
     }
 
@@ -181,13 +186,13 @@ impl WebDavClient {
             .request(Method::GET, url)
             .send()
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(request_error)?;
         Self::ensure_success(response)
             .await?
             .bytes()
             .await
             .map(|bytes| bytes.to_vec())
-            .map_err(|error| error.to_string())
+            .map_err(request_error)
     }
 
     async fn write_file(&self, relative: &str, bytes: Vec<u8>) -> Result<(), String> {
@@ -197,7 +202,7 @@ impl WebDavClient {
             .body(bytes)
             .send()
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(request_error)?;
         Self::ensure_success(response).await.map(|_| ())
     }
 
@@ -214,6 +219,17 @@ impl WebDavClient {
             })
         }
     }
+}
+
+fn request_error(error: reqwest::Error) -> String {
+    let mut message = error.to_string();
+    let mut source = std::error::Error::source(&error);
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -965,10 +981,10 @@ mod tests {
     use std::{
         fs,
         io::{Read, Write},
-        net::TcpListener,
+        net::{TcpListener, TcpStream},
         path::PathBuf,
         thread,
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
     fn temporary_directory() -> PathBuf {
@@ -980,6 +996,90 @@ mod tests {
             std::env::temp_dir().join(format!("r2-list-test-{}-{unique}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    fn read_http_request(stream: &mut TcpStream) -> String {
+        let mut buffer = Vec::new();
+        let mut chunk = [0u8; 4096];
+        let mut header_end = None;
+        loop {
+            let read = stream.read(&mut chunk).unwrap();
+            if read == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&chunk[..read]);
+            if header_end.is_none() {
+                header_end = buffer
+                    .windows(4)
+                    .position(|window| window == b"\r\n\r\n")
+                    .map(|index| index + 4);
+            }
+            if let Some(end) = header_end {
+                let headers = String::from_utf8_lossy(&buffer[..end]).to_string();
+                let content_length = headers
+                    .lines()
+                    .find(|line| line.to_ascii_lowercase().starts_with("content-length:"))
+                    .and_then(|line| line.split(':').nth(1))
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if buffer.len() >= end + content_length {
+                    break;
+                }
+            } else if buffer.len() > 65536 {
+                break;
+            }
+        }
+        String::from_utf8_lossy(&buffer).to_string()
+    }
+
+    fn request_target(request: &str) -> String {
+        request
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    fn file_metadata_xml(href: &str, size: usize) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="utf-8"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>{href}</d:href><d:propstat><d:prop><d:resourcetype/><d:getcontentlength>{size}</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"#
+        )
+    }
+
+    fn spawn_dav_server(
+        listener: TcpListener,
+        respond: impl Fn(&str) -> (u16, String) + Send + 'static,
+        stop_after: usize,
+    ) -> thread::JoinHandle<Vec<String>> {
+        thread::spawn(move || {
+            listener.set_nonblocking(true).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut targets = Vec::new();
+            while targets.len() < stop_after && Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                        let request = read_http_request(&mut stream);
+                        let target = request_target(&request);
+                        let (status, body) = respond(&target);
+                        targets.push(target);
+                        write!(
+                            stream,
+                            "HTTP/1.1 {status} \r\nContent-Type: application/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body.len(),
+                            body
+                        )
+                        .unwrap();
+                    }
+                    Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => break,
+                }
+            }
+            targets
+        })
     }
 
     #[test]
@@ -1120,5 +1220,87 @@ mod tests {
 
         assert_eq!(destination.file_name().unwrap(), "notes (2).txt");
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn reads_file_metadata_without_a_trailing_slash() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let body = file_metadata_xml("/dav/photos/cat.jpg", 42);
+        let server = spawn_dav_server(listener, move |_target| (207, body.clone()), 1);
+
+        let client =
+            WebDavClient::new(&format!("http://{address}/dav"), "alice", "secret").unwrap();
+        let metadata = client.stat("photos/cat.jpg").await.unwrap();
+
+        assert!(!metadata.is_collection);
+        assert_eq!(metadata.size_bytes, 42);
+        assert_eq!(
+            server.join().unwrap(),
+            vec!["/dav/photos/cat.jpg".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn reads_file_metadata_from_a_server_that_rejects_a_trailing_slash() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let body = file_metadata_xml("/dav/photos/cat.jpg", 42);
+        let server = spawn_dav_server(
+            listener,
+            move |target| {
+                if target.ends_with('/') {
+                    (404, String::new())
+                } else {
+                    (207, body.clone())
+                }
+            },
+            1,
+        );
+
+        let client =
+            WebDavClient::new(&format!("http://{address}/dav"), "alice", "secret").unwrap();
+        let metadata = client.stat("photos/cat.jpg").await.unwrap();
+
+        assert!(!metadata.is_collection);
+        assert_eq!(metadata.size_bytes, 42);
+        assert_eq!(
+            server.join().unwrap(),
+            vec!["/dav/photos/cat.jpg".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn checks_file_existence_without_a_trailing_slash() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let body = file_metadata_xml("/dav/photos/cat.jpg", 42);
+        let server = spawn_dav_server(listener, move |_target| (207, body.clone()), 1);
+
+        let client =
+            WebDavClient::new(&format!("http://{address}/dav"), "alice", "secret").unwrap();
+
+        assert!(client.exists("photos/cat.jpg").await.unwrap());
+        assert_eq!(
+            server.join().unwrap(),
+            vec!["/dav/photos/cat.jpg".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn lists_directories_with_a_trailing_slash_and_parses_files() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let body = r#"<?xml version="1.0" encoding="utf-8"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/photos/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response><d:response><d:href>/dav/photos/cat.jpg</d:href><d:propstat><d:prop><d:resourcetype/><d:getcontentlength>42</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"#.to_string();
+        let server = spawn_dav_server(listener, move |_target| (207, body.clone()), 1);
+
+        let client =
+            WebDavClient::new(&format!("http://{address}/dav"), "alice", "secret").unwrap();
+        let entries = client.list_dir("photos").await.unwrap();
+
+        assert_eq!(server.join().unwrap(), vec!["/dav/photos/".to_string()]);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name(), "cat.jpg");
+        assert!(!entries[0].is_collection);
     }
 }
