@@ -703,7 +703,7 @@ function App() {
         </div>
         <div className="settings-section">
           <h3>{t("versionCheck")}</h3>
-          <div className="settings-row"><span>{t("version")}</span><strong>{appVersion || "0.0.2"}</strong></div>
+          <div className="settings-row"><span>{t("version")}</span><strong>{appVersion || "0.0.3"}</strong></div>
           <div className="settings-row"><span>{t("latestVersion")}</span><span className={`update-status-pill ${updateStatus.status}`}>{updateStatus.message || t("checkingUpdates")}{updateStatus.latest ? <small> · {updateStatus.latest}</small> : null}</span></div>
           <div className="settings-actions"><button type="button" className="button-secondary" onClick={() => setVersionCheckId((value) => value + 1)}><RefreshCw size={15} />{t("checkForUpdates")}</button><button type="button" className="button-secondary" onClick={() => void openUrl(GITHUB_RELEASES_URL)}>{t("viewLatestRelease")}</button></div>
         </div>

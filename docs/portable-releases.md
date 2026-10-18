@@ -5,7 +5,7 @@ Each platform script builds only for its own operating system; the macOS script 
 ## Artifacts
 
 - Local builds use `r2-list-windows-x64.zip`, `r2-list-macos-<architecture>.zip` (macOS: `arm64` or `x64-10.15`), and `r2-list-linux-<architecture>.AppImage` (for Linux: `x64` or `arm64`).
-- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.2.zip`, `r2-list-macos-arm64-v0.0.2.zip`, `r2-list-macos-x64-10.15-v0.0.2.zip`, `r2-list-linux-x64-v0.0.2.AppImage`, and `r2-list-linux-arm64-v0.0.2.AppImage`.
+- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.3.zip`, `r2-list-macos-arm64-v0.0.3.zip`, `r2-list-macos-x64-10.15-v0.0.3.zip`, `r2-list-linux-x64-v0.0.3.AppImage`, and `r2-list-linux-arm64-v0.0.3.AppImage`.
 - macOS builds are produced for Apple Silicon (`arm64`, macOS 11 or later) and Intel (`x64`, macOS 10.15 Catalina or later). The Intel build sets the deployment target and `LSMinimumSystemVersion` to `10.15`; the frontend bundle targets ES2020 so it also runs in Catalina's WebKit.
 
 These are portable outputs, not installers. Windows still requires the WebView2 Runtime; it is included with current Windows releases on most machines. Linux AppImage execution may require FUSE 2 and the host WebKit/GTK libraries. macOS builds are unsigned unless signing credentials are configured, so Gatekeeper may require the user to approve the app manually. Windows SmartScreen may also display a warning for unsigned binaries.
