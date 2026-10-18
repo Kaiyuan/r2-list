@@ -8,6 +8,11 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [react()],
 
+  build: {
+    // Safari 15.6 is the newest WebKit available on macOS 10.15 Catalina.
+    target: "es2020",
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

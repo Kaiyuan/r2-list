@@ -34,10 +34,11 @@ npm run tauri dev
 ```sh
 npm run build:portable:windows
 npm run build:portable:macos
+npm run build:portable:macos:x64
 npm run build:portable:linux
 ```
 
-每个命令只适用于对应操作系统，产物写入 `artifacts/portable/`。推送 `v` 开头的版本 tag（例如 `v1.2.3`）后，GitHub Actions 会构建 Windows x64、macOS（runner 原生架构）和 Linux x64 产物，并创建或更新该 tag 对应的 GitHub Release。普通代码 push 不会触发发布或 Pages 部署。
+每个命令只适用于对应操作系统，产物写入 `artifacts/portable/`。`build:portable:macos` 构建当前 Mac 架构，`build:portable:macos:x64` 构建兼容 macOS 10.15 Catalina 的 Intel 版本。推送 `v` 开头的版本 tag（例如 `v1.2.3`）后，GitHub Actions 会构建 Windows x64、macOS arm64、macOS x64（macOS 10.15 Catalina）和 Linux x64/arm64 产物，并创建或更新该 tag 对应的 GitHub Release。普通代码 push 不会触发发布或 Pages 部署。
 
 平台运行时、系统依赖及未签名应用的限制见 [`docs/portable-releases.md`](docs/portable-releases.md)。
 

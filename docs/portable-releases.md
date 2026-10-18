@@ -1,12 +1,12 @@
 # Portable Releases
 
-Each platform script builds only for the current host. Build prerequisites are Node.js 20.19+ (or 22.12+), Rust stable, and the platform dependencies listed in the Tauri v2 prerequisites.
+Each platform script builds only for its own operating system; the macOS script can also cross-compile an Intel build from Apple Silicon. Build prerequisites are Node.js 20.19+ (or 22.12+), Rust stable, and the platform dependencies listed in the Tauri v2 prerequisites.
 
 ## Artifacts
 
-- Local builds use `r2-list-windows-x64.zip`, `r2-list-macos-<architecture>.zip`, and `r2-list-linux-<architecture>.AppImage` (for Linux: `x64` or `arm64`).
-- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.2.zip`, `r2-list-macos-arm64-v0.0.2.zip`, `r2-list-linux-x64-v0.0.2.AppImage`, and `r2-list-linux-arm64-v0.0.2.AppImage`.
-- macOS architecture is detected from the build runner (`arm64` or `x64`).
+- Local builds use `r2-list-windows-x64.zip`, `r2-list-macos-<architecture>.zip` (macOS: `arm64` or `x64-10.15`), and `r2-list-linux-<architecture>.AppImage` (for Linux: `x64` or `arm64`).
+- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.2.zip`, `r2-list-macos-arm64-v0.0.2.zip`, `r2-list-macos-x64-10.15-v0.0.2.zip`, `r2-list-linux-x64-v0.0.2.AppImage`, and `r2-list-linux-arm64-v0.0.2.AppImage`.
+- macOS builds are produced for Apple Silicon (`arm64`, macOS 11 or later) and Intel (`x64`, macOS 10.15 Catalina or later). The Intel build sets the deployment target and `LSMinimumSystemVersion` to `10.15`; the frontend bundle targets ES2020 so it also runs in Catalina's WebKit.
 
 These are portable outputs, not installers. Windows still requires the WebView2 Runtime; it is included with current Windows releases on most machines. Linux AppImage execution may require FUSE 2 and the host WebKit/GTK libraries. macOS builds are unsigned unless signing credentials are configured, so Gatekeeper may require the user to approve the app manually. Windows SmartScreen may also display a warning for unsigned binaries.
 
@@ -17,16 +17,17 @@ Run the matching command from the repository root:
 ```sh
 npm run build:portable:windows
 npm run build:portable:macos
+npm run build:portable:macos:x64
 npm run build:portable:linux
 npm run build:portable:linux:x64
 npm run build:portable:linux:arm64
 ```
 
-Artifacts are written under the ignored `artifacts/portable/` directory. The scripts use `npm ci` and the Tauri CLI; Rust, the native linker, and operating-system libraries must already be installed.
+Artifacts are written under the ignored `artifacts/portable/` directory. The scripts use `npm ci` and the Tauri CLI; Rust, the native linker, and operating-system libraries must already be installed. `build:portable:macos` builds for the host architecture, while `build:portable:macos:x64` cross-compiles an Intel build targeting macOS 10.15 Catalina when run on Apple Silicon (it installs the `x86_64-apple-darwin` Rust target automatically).
 
 ## GitHub Releases
 
-Pushing a version tag matching `v*` (for example, `v1.2.3`) starts `.github/workflows/release-portable.yml`. Pushing code to a branch or creating a non-version tag does not start the workflow. It builds Windows, macOS, and both Linux architectures (x64 and arm64) in parallel and uploads their outputs to the GitHub Release for that exact tag. The repository Actions workflow needs `contents: write` permission, which the workflow requests explicitly.
+Pushing a version tag matching `v*` (for example, `v1.2.3`) starts `.github/workflows/release-portable.yml`. Pushing code to a branch or creating a non-version tag does not start the workflow. It builds Windows x64, macOS arm64, macOS x64 (10.15 Catalina compatible, on an Intel runner), and both Linux architectures (x64 and arm64) in parallel and uploads their outputs to the GitHub Release for that exact tag. The repository Actions workflow needs `contents: write` permission, which the workflow requests explicitly.
 
 ## GitHub Pages
 

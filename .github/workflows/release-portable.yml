@@ -21,8 +21,15 @@ jobs:
         include:
           - platform: windows-x64
             os: windows-latest
-          - platform: macos
+          - platform: macos-arm64
             os: macos-latest
+            macos_architecture: arm64
+            macos_deployment_target: ""
+          # Catalina (10.15) is Intel-only, so the legacy build needs an x64 runner.
+          - platform: macos-x64-10.15
+            os: macos-15-intel
+            macos_architecture: x64
+            macos_deployment_target: "10.15"
           - platform: linux-x64
             os: ubuntu-24.04
           - platform: linux-arm64
@@ -73,9 +80,9 @@ jobs:
         run: ./scripts/build-portable-windows.ps1
 
       - name: Build macOS portable artifact
-        if: matrix.platform == 'macos'
+        if: startsWith(matrix.platform, 'macos-')
         shell: bash
-        run: bash scripts/build-portable-macos.sh
+        run: bash scripts/build-portable-macos.sh "${{ matrix.macos_architecture }}" "${{ matrix.macos_deployment_target }}"
 
       - name: Build Linux portable artifact
         if: startsWith(matrix.platform, 'linux-')
@@ -94,7 +101,7 @@ jobs:
           Move-Item -LiteralPath $source -Destination $destination
 
       - name: Add version to macOS archive name
-        if: matrix.platform == 'macos'
+        if: startsWith(matrix.platform, 'macos-')
         shell: bash
         run: |
           shopt -s nullglob
