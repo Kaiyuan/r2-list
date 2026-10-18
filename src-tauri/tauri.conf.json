@@ -13,10 +13,11 @@
     "windows": [
       {
         "title": "R2 List",
-        "width": 1480,
-        "height": 960,
+        "width": 1320,
+        "height": 820,
         "minWidth": 980,
-        "minHeight": 680
+        "minHeight": 680,
+        "center": true
       }
     ],
     "security": {

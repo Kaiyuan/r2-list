@@ -206,6 +206,44 @@ impl WebDavClient {
         Self::ensure_success(response).await.map(|_| ())
     }
 
+    async fn remove(&self, relative: &str) -> Result<(), String> {
+        let metadata = self.stat(relative).await?;
+        let url = self.url_for(relative, metadata.is_collection)?;
+        let response = self
+            .request(
+                Method::from_bytes(b"DELETE").map_err(|error| error.to_string())?,
+                url,
+            )
+            .send()
+            .await
+            .map_err(request_error)?;
+        Self::ensure_success(response).await.map(|_| ())
+    }
+
+    async fn transfer(
+        &self,
+        method: &'static [u8],
+        depth: Option<&str>,
+        from: &str,
+        to: &str,
+    ) -> Result<(), String> {
+        let metadata = self.stat(from).await?;
+        let from_url = self.url_for(from, metadata.is_collection)?;
+        let to_url = self.url_for(to, metadata.is_collection)?;
+        let mut request = self
+            .request(
+                Method::from_bytes(method).map_err(|error| error.to_string())?,
+                from_url,
+            )
+            .header("Destination", to_url.as_str())
+            .header("Overwrite", "F");
+        if let Some(depth) = depth {
+            request = request.header("Depth", depth);
+        }
+        let response = request.send().await.map_err(request_error)?;
+        Self::ensure_success(response).await.map(|_| ())
+    }
+
     async fn ensure_success(response: Response) -> Result<Response, String> {
         let status = response.status();
         if status.is_success() {
@@ -555,19 +593,129 @@ fn default_directory() -> Option<String> {
     )
 }
 
-fn user_config_path() -> Result<PathBuf, String> {
+const CONFIG_FILE_NAME: &str = "r2-list.config";
+const LEGACY_CONFIG_FILE_NAME: &str = "r2-list.comfig";
+const SETTINGS_POINTER_FILE_NAME: &str = "r2-list.settings.json";
+
+#[derive(Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsPointer {
+    #[serde(default)]
+    config_directory: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigLocation {
+    directory: String,
+    config_path: String,
+}
+
+fn home_directory() -> Result<PathBuf, String> {
     let home = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .ok_or_else(|| "Could not locate the user home directory".to_string())?;
-    Ok(PathBuf::from(home).join("r2-list.comfig"))
+    Ok(PathBuf::from(home))
+}
+
+fn settings_pointer_path() -> Result<PathBuf, String> {
+    Ok(home_directory()?.join(SETTINGS_POINTER_FILE_NAME))
+}
+
+fn configured_config_directory() -> Result<PathBuf, String> {
+    let pointer_path = settings_pointer_path()?;
+    if let Ok(contents) = fs::read_to_string(&pointer_path) {
+        if let Ok(pointer) = serde_json::from_str::<SettingsPointer>(&contents) {
+            if let Some(directory) = pointer
+                .config_directory
+                .filter(|directory| !directory.trim().is_empty())
+            {
+                return Ok(PathBuf::from(directory));
+            }
+        }
+    }
+    home_directory()
+}
+
+fn user_config_path() -> Result<PathBuf, String> {
+    Ok(configured_config_directory()?.join(CONFIG_FILE_NAME))
+}
+
+fn legacy_config_path() -> Result<PathBuf, String> {
+    Ok(configured_config_directory()?.join(LEGACY_CONFIG_FILE_NAME))
+}
+
+fn config_location_value(directory: &Path) -> ConfigLocation {
+    ConfigLocation {
+        directory: directory.to_string_lossy().into_owned(),
+        config_path: directory
+            .join(CONFIG_FILE_NAME)
+            .to_string_lossy()
+            .into_owned(),
+    }
+}
+
+#[tauri::command]
+fn config_location() -> Result<ConfigLocation, String> {
+    Ok(config_location_value(&configured_config_directory()?))
+}
+
+#[tauri::command]
+fn set_config_directory(directory: String) -> Result<ConfigLocation, String> {
+    let directory = directory.trim();
+    if directory.is_empty() {
+        let pointer_path = settings_pointer_path()?;
+        if pointer_path.exists() {
+            fs::remove_file(pointer_path).map_err(|error| error.to_string())?;
+        }
+        return Ok(config_location_value(&home_directory()?));
+    }
+
+    let path = PathBuf::from(directory);
+    fs::create_dir_all(&path).map_err(|error| error.to_string())?;
+    let path = fs::canonicalize(&path).map_err(|error| error.to_string())?;
+    let target = path.join(CONFIG_FILE_NAME);
+    if !target.exists() {
+        let current = user_config_path()?;
+        let legacy = legacy_config_path()?;
+        let source = if current.exists() {
+            Some(current)
+        } else if legacy.exists() {
+            Some(legacy)
+        } else {
+            None
+        };
+        if let Some(source) = source {
+            if source != target {
+                fs::copy(source, &target).map_err(|error| error.to_string())?;
+            }
+        }
+    }
+
+    let pointer = SettingsPointer {
+        config_directory: Some(path.to_string_lossy().into_owned()),
+    };
+    let contents = serde_json::to_vec_pretty(&pointer).map_err(|error| error.to_string())?;
+    fs::write(settings_pointer_path()?, contents).map_err(|error| error.to_string())?;
+    Ok(config_location_value(&path))
 }
 
 #[tauri::command]
 fn load_user_config() -> Result<UserConfig, String> {
     let path = user_config_path()?;
-    if !path.exists() {
+    let path = if path.exists() {
+        Some(path)
+    } else {
+        let legacy = legacy_config_path()?;
+        if legacy.exists() {
+            Some(legacy)
+        } else {
+            None
+        }
+    };
+    let Some(path) = path else {
         return Ok(UserConfig::default());
-    }
+    };
     let contents = fs::read_to_string(path).map_err(|error| error.to_string())?;
     serde_json::from_str(&contents).map_err(|error| error.to_string())
 }
@@ -575,6 +723,9 @@ fn load_user_config() -> Result<UserConfig, String> {
 #[tauri::command]
 fn save_user_config(config: UserConfig) -> Result<(), String> {
     let path = user_config_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
     let contents = serde_json::to_vec_pretty(&config).map_err(|error| error.to_string())?;
     fs::write(path, contents).map_err(|error| error.to_string())
 }
@@ -747,6 +898,104 @@ async fn import_remote_files(
     remote_listing(&client, &id, &directory).await
 }
 
+fn remote_client(state: &State<'_, RemoteDirectory>) -> Result<(String, WebDavClient), String> {
+    let connection = state
+        .0
+        .lock()
+        .map_err(|_| "Remote directory state unavailable".to_string())?;
+    let connection = connection
+        .as_ref()
+        .ok_or_else(|| "Connect to a network location first".to_string())?;
+    Ok((connection.id.clone(), connection.client.clone()))
+}
+
+fn suffixed_name(name: &str, suffix: u32) -> String {
+    if suffix == 1 {
+        return name.to_string();
+    }
+    let path = Path::new(name);
+    let stem = path
+        .file_stem()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| name.to_string());
+    match path.extension().and_then(|value| value.to_str()) {
+        Some(extension) if !extension.is_empty() => format!("{stem} ({suffix}).{extension}"),
+        _ => format!("{stem} ({suffix})"),
+    }
+}
+
+async fn remote_available_target(
+    client: &WebDavClient,
+    directory: &str,
+    name: &str,
+) -> Result<String, String> {
+    let mut suffix = 1;
+    loop {
+        let target = join_remote_path(directory, &suffixed_name(name, suffix));
+        if !client.exists(&target).await? {
+            return Ok(target);
+        }
+        if suffix >= 999 {
+            return Err("Could not find an available destination name".to_string());
+        }
+        suffix += 1;
+    }
+}
+
+async fn transfer_remote_entry(
+    source: String,
+    destination_directory: String,
+    state: State<'_, RemoteDirectory>,
+    method: &'static [u8],
+    depth: Option<&str>,
+) -> Result<(), String> {
+    let (_, client) = remote_client(&state)?;
+    let source = normalize_remote_relative_path(&source)?;
+    let destination_directory = normalize_remote_relative_path(&destination_directory)?;
+    if source.is_empty() {
+        return Err("Cannot transfer the root directory".to_string());
+    }
+    if destination_directory == source || destination_directory.starts_with(&format!("{source}/")) {
+        return Err("Cannot transfer a folder into itself".to_string());
+    }
+    let name = source.rsplit('/').next().unwrap_or_default();
+    let target = remote_available_target(&client, &destination_directory, name).await?;
+    client
+        .transfer(method, depth, &source, &target)
+        .await
+}
+
+#[tauri::command]
+async fn copy_remote_entry(
+    source: String,
+    destination_directory: String,
+    state: State<'_, RemoteDirectory>,
+) -> Result<(), String> {
+    transfer_remote_entry(source, destination_directory, state, b"COPY", Some("infinity")).await
+}
+
+#[tauri::command]
+async fn move_remote_entry(
+    source: String,
+    destination_directory: String,
+    state: State<'_, RemoteDirectory>,
+) -> Result<(), String> {
+    transfer_remote_entry(source, destination_directory, state, b"MOVE", None).await
+}
+
+#[tauri::command]
+async fn delete_remote_entry(
+    path: String,
+    state: State<'_, RemoteDirectory>,
+) -> Result<(), String> {
+    let (_, client) = remote_client(&state)?;
+    let path = normalize_remote_relative_path(&path)?;
+    if path.is_empty() {
+        return Err("Cannot delete the root directory".to_string());
+    }
+    client.remove(&path).await
+}
+
 #[tauri::command]
 async fn read_remote_preview(
     path: String,
@@ -911,6 +1160,94 @@ fn import_files(
     })
 }
 
+fn copy_recursively(source: &Path, destination: &Path) -> Result<(), String> {
+    if source.is_dir() {
+        fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+        for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            copy_recursively(&entry.path(), &destination.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        fs::copy(source, destination)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[tauri::command]
+fn copy_entry(
+    source: String,
+    destination_directory: String,
+    state: State<'_, LocalDirectory>,
+) -> Result<(), String> {
+    let root = active_root(&state)?;
+    let source = resolve_path(&root, &source)?;
+    let destination = resolve_path(&root, &destination_directory)?;
+    if !destination.is_dir() {
+        return Err("The destination is not a directory".to_string());
+    }
+    if source.is_dir() && destination.starts_with(&source) {
+        return Err("Cannot copy a folder into itself".to_string());
+    }
+    let name = source
+        .file_name()
+        .ok_or_else(|| "The selected item has no name".to_string())?
+        .to_string_lossy()
+        .into_owned();
+    let target = available_destination(&destination, &name);
+    copy_recursively(&source, &target)
+}
+
+#[tauri::command]
+fn move_entry(
+    source: String,
+    destination_directory: String,
+    state: State<'_, LocalDirectory>,
+) -> Result<(), String> {
+    let root = active_root(&state)?;
+    let source = resolve_path(&root, &source)?;
+    let destination = resolve_path(&root, &destination_directory)?;
+    if !destination.is_dir() {
+        return Err("The destination is not a directory".to_string());
+    }
+    if source.is_dir() && destination.starts_with(&source) {
+        return Err("Cannot move a folder into itself".to_string());
+    }
+    let name = source
+        .file_name()
+        .ok_or_else(|| "The selected item has no name".to_string())?
+        .to_string_lossy()
+        .into_owned();
+    let target = available_destination(&destination, &name);
+    if fs::rename(&source, &target).is_err() {
+        copy_recursively(&source, &target)?;
+        if source.is_dir() {
+            fs::remove_dir_all(&source).map_err(|error| error.to_string())?;
+        } else {
+            fs::remove_file(&source).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_entry(path: String, state: State<'_, LocalDirectory>) -> Result<(), String> {
+    let root = active_root(&state)?;
+    if normalize_remote_relative_path(&path)?.is_empty() {
+        return Err("Cannot delete the root directory".to_string());
+    }
+    let target = resolve_path(&root, &path)?;
+    if target == root {
+        return Err("Cannot delete the root directory".to_string());
+    }
+    if target.is_dir() {
+        fs::remove_dir_all(target).map_err(|error| error.to_string())
+    } else {
+        fs::remove_file(target).map_err(|error| error.to_string())
+    }
+}
+
 #[tauri::command]
 fn read_preview(path: String, state: State<'_, LocalDirectory>) -> Result<PreviewData, String> {
     const MAX_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
@@ -953,6 +1290,8 @@ pub fn run() {
         .manage(RemoteDirectory::default())
         .invoke_handler(tauri::generate_handler![
             default_directory,
+            config_location,
+            set_config_directory,
             load_user_config,
             save_user_config,
             app_version,
@@ -962,10 +1301,16 @@ pub fn run() {
             read_remote_directory,
             create_remote_directory,
             import_remote_files,
+            copy_remote_entry,
+            move_remote_entry,
+            delete_remote_entry,
             read_remote_preview,
             read_directory,
             create_directory,
             import_files,
+            copy_entry,
+            move_entry,
+            delete_entry,
             read_preview
         ])
         .run(tauri::generate_context!())
@@ -976,7 +1321,7 @@ pub fn run() {
 mod tests {
     use super::{
         WebDavClient, available_destination, file_kind, join_remote_path, list_directory,
-        remote_absolute_path, remote_child_path, resolve_path,
+        remote_absolute_path, remote_child_path, resolve_path, suffixed_name,
     };
     use std::{
         fs,
@@ -1209,6 +1554,13 @@ mod tests {
                 .any(|entry| entry.path == "images" && entry.kind == "directory")
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn adds_suffixes_for_transfer_names() {
+        assert_eq!(suffixed_name("notes.txt", 1), "notes.txt");
+        assert_eq!(suffixed_name("notes.txt", 2), "notes (2).txt");
+        assert_eq!(suffixed_name("folder", 3), "folder (3)");
     }
 
     #[test]
