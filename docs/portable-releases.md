@@ -1,29 +1,28 @@
 # Portable Releases
 
-Each platform script builds only for its own operating system; the macOS script can also cross-compile an Intel build from Apple Silicon. Build prerequisites are Node.js 20.19+ (or 22.12+), Rust stable, and the platform dependencies listed in the Tauri v2 prerequisites.
+Each platform script builds only for its own operating system; the macOS script can also cross-compile for the other Apple architecture. Build prerequisites are Rust stable, the native build libraries required by Slint, and the platform archive tool (`zip` on Linux).
 
 ## Artifacts
 
-- Local builds use `r2-list-windows-x64.zip`, `r2-list-macos-<architecture>.zip` (macOS: `arm64` or `x64-10.15`), and `r2-list-linux-<architecture>.AppImage` (for Linux: `x64` or `arm64`).
-- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.3.zip`, `r2-list-macos-arm64-v0.0.3.zip`, `r2-list-macos-x64-10.15-v0.0.3.zip`, `r2-list-linux-x64-v0.0.3.AppImage`, and `r2-list-linux-arm64-v0.0.3.AppImage`.
-- macOS builds are produced for Apple Silicon (`arm64`, macOS 11 or later) and Intel (`x64`, macOS 10.15 Catalina or later). The Intel build sets the deployment target and `LSMinimumSystemVersion` to `10.15`; the frontend bundle targets ES2020 so it also runs in Catalina's WebKit.
+- Local builds use `r2-list-windows-x64.zip`, `r2-list-macos-<architecture>.zip`, and `r2-list-linux-<architecture>.zip`.
+- GitHub Release assets include the version tag in each filename, for example `r2-list-windows-x64-v0.0.3.zip`, `r2-list-macos-arm64-v0.0.3.zip`, `r2-list-macos-x64-10.15-v0.0.3.zip`, `r2-list-linux-x64-v0.0.3.zip`, and `r2-list-linux-arm64-v0.0.3.zip`.
+- macOS builds are produced for Apple Silicon (`arm64`) and Intel (`x64`). The Intel release build targets macOS 10.15 when built with the provided workflow.
 
-These are portable outputs, not installers. Windows still requires the WebView2 Runtime; it is included with current Windows releases on most machines. Linux AppImage execution may require FUSE 2 and the host WebKit/GTK libraries. macOS builds are unsigned unless signing credentials are configured, so Gatekeeper may require the user to approve the app manually. Windows SmartScreen may also display a warning for unsigned binaries.
+These are archives containing the native executable and this document, not installers or self-contained application bundles. Slint does not require WebView2 or WebKit; Linux still requires compatible host graphics libraries. macOS builds are unsigned, so Gatekeeper may require approval. Windows SmartScreen may also display a warning for unsigned binaries.
 
 ## Local Builds
 
 Run the matching command from the repository root:
 
 ```sh
-npm run build:portable:windows
-npm run build:portable:macos
-npm run build:portable:macos:x64
-npm run build:portable:linux
-npm run build:portable:linux:x64
-npm run build:portable:linux:arm64
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable-windows.ps1
+bash scripts/build-portable-macos.sh
+bash scripts/build-portable-macos.sh x64 10.15
+bash scripts/build-portable-linux.sh x64
+bash scripts/build-portable-linux.sh arm64
 ```
 
-Artifacts are written under the ignored `artifacts/portable/` directory. The scripts use `npm ci` and the Tauri CLI; Rust, the native linker, and operating-system libraries must already be installed. `build:portable:macos` builds for the host architecture, while `build:portable:macos:x64` cross-compiles an Intel build targeting macOS 10.15 Catalina when run on Apple Silicon (it installs the `x86_64-apple-darwin` Rust target automatically).
+Artifacts are written under the ignored `artifacts/portable/` directory. The scripts use Cargo directly; Rust, the native linker, and operating-system libraries must already be installed. Linux builds must run on a host matching the selected architecture.
 
 ## GitHub Releases
 

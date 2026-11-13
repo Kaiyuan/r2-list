@@ -1,15 +1,4 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
+# Generated files
 *.local
 /artifacts/
 
@@ -25,4 +14,3 @@ dist-ssr
 *.sln
 *.sw?
 Thumbs.db
-*.test.ts

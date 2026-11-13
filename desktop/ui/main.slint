@@ -1,0 +1,3365 @@
+import { Palette, ScrollView } from "std-widgets.slint";
+
+export struct FileRow {
+    name: string,
+    path: string,
+    kind: string,
+    size: string,
+    modified: string,
+    is-directory: bool,
+    thumbnail: image,
+    has-thumbnail: bool,
+}
+
+export struct LocationRow {
+    path: string,
+    label: string,
+    kind: string,
+    is-active: bool,
+}
+
+export struct BreadcrumbRow {
+    label: string,
+    path: string,
+}
+
+export struct SiblingFolder {
+    name: string,
+    path: string,
+    is-current: bool,
+}
+
+component UiIcon inherits Rectangle {
+    in property <string> name;
+    in property <length> size: 16px;
+    in property <length> frame-height: size;
+    in property <color> tint: #91a2b7;
+    width: size;
+    height: frame-height;
+    Image {
+        y: (root.height - root.size) / 2;
+        width: root.size;
+        height: root.size;
+        image-fit: contain;
+        colorize: root.tint;
+        source: root.name == "cloud" ? @image-url("icons/cloud.svg")
+            : root.name == "files" ? @image-url("icons/files.svg")
+            : root.name == "sliders" ? @image-url("icons/sliders.svg")
+            : root.name == "drive" ? @image-url("icons/hard-drive.svg")
+            : root.name == "plus" ? @image-url("icons/plus.svg")
+            : root.name == "folder" ? @image-url("icons/folder.svg")
+            : root.name == "upload" ? @image-url("icons/upload.svg")
+            : root.name == "search" ? @image-url("icons/search.svg")
+            : root.name == "folder-plus" ? @image-url("icons/folder-plus.svg")
+            : root.name == "refresh" ? @image-url("icons/refresh.svg")
+            : root.name == "more" ? @image-url("icons/more.svg")
+            : root.name == "back" ? @image-url("icons/arrow-left.svg")
+            : root.name == "image" ? @image-url("icons/image.svg")
+            : root.name == "copy" ? @image-url("icons/copy.svg")
+            : root.name == "code" ? @image-url("icons/code.svg")
+            : root.name == "external" ? @image-url("icons/external.svg")
+            : root.name == "trash" ? @image-url("icons/trash.svg")
+            : root.name == "shield" ? @image-url("icons/shield.svg")
+            : root.name == "moon" ? @image-url("icons/moon.svg")
+            : root.name == "sun" ? @image-url("icons/sun.svg")
+            : root.name == "language" ? @image-url("icons/language.svg")
+            : root.name == "link" ? @image-url("icons/link.svg")
+            : root.name == "close" ? @image-url("icons/close.svg")
+            : root.name == "list" ? @image-url("icons/list.svg")
+            : root.name == "grid" ? @image-url("icons/grid.svg")
+            : root.name == "chevron-right" ? @image-url("icons/chevron-right.svg")
+            : root.name == "chevron-down" ? @image-url("icons/chevron-down.svg")
+            : root.name == "chevron-up" ? @image-url("icons/chevron-up.svg")
+            : root.name == "home" ? @image-url("icons/home.svg")
+            : root.name == "clipboard-paste" ? @image-url("icons/clipboard-paste.svg")
+            : root.name == "pencil" ? @image-url("icons/pencil.svg")
+            : root.name == "video" ? @image-url("icons/video.svg")
+            : root.name == "audio" ? @image-url("icons/audio.svg")
+            : root.name == "archive" ? @image-url("icons/archive.svg")
+            : root.name == "document" ? @image-url("icons/document.svg")
+            : root.name == "text" ? @image-url("icons/text.svg")
+            : root.name == "download" ? @image-url("icons/download.svg")
+            : root.name == "move" ? @image-url("icons/move.svg")
+            : root.name == "sidebar-right" ? @image-url("icons/sidebar-right.svg")
+            : root.name == "sidebar-right-open" ? @image-url("icons/sidebar-right-open.svg")
+            : @image-url("icons/file.svg");
+    }
+}
+
+component RowText inherits Text {
+    in property <length> row-height: 36px;
+    height: row-height;
+    vertical-alignment: center;
+}
+
+component PathCrumb inherits Rectangle {
+    in property <string> label;
+    in property <bool> current: false;
+    in property <color> ink: #1f262e;
+    in property <color> muted: #848d99;
+    in property <color> accent: #2563a8;
+    in property <color> accent-soft: #e9f1fb;
+    in property <color> panel-soft: #f7f9fc;
+    callback clicked;
+    height: 18px;
+    width: min(path-label.preferred-width + 10px, 220px);
+    border-radius: 4px;
+    background: path-hit.has-hover ? (root.current ? root.accent-soft : root.panel-soft) : Colors.transparent;
+
+    path-label := Text {
+        x: 5px;
+        width: parent.width - 10px;
+        height: parent.height;
+        text: root.label;
+        color: path-hit.has-hover ? root.accent : (root.current ? root.ink : root.muted);
+        font-size: 10px;
+        font-weight: root.current ? 600 : 400;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    path-hit := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+component FieldInput inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder-text;
+    in property <bool> password: false;
+    in property <bool> flat: false;
+    in property <color> field-bg: #ffffff;
+    in property <color> outline: #dce2ea;
+    in property <color> ink: #1f262e;
+    in property <color> muted: #848d99;
+    in property <length> font-size: 11px;
+    in property <length> field-radius: 5px;
+    in property <length> inset: 9px;
+    callback edited;
+    callback accepted;
+    public function focus-input() {
+        search-input.focus();
+    }
+    background: flat ? Colors.transparent : field-bg;
+    border-color: flat ? Colors.transparent : outline;
+    border-width: flat ? 0px : 1px;
+    border-radius: flat ? 0px : field-radius;
+
+    if text == "" && placeholder-text != "": Text {
+        x: flat ? 0px : inset + 1px;
+        width: parent.width - (flat ? 0px : inset * 2 + 2px);
+        height: parent.height;
+        text: root.placeholder-text;
+        color: root.muted;
+        font-size: root.font-size;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    search-input := TextInput {
+        x: flat ? 0px : inset;
+        y: 0px;
+        width: parent.width - (flat ? 0px : inset * 2);
+        height: parent.height;
+        color: root.ink;
+        font-size: root.font-size;
+        vertical-alignment: center;
+        single-line: true;
+        input-type: root.password ? InputType.password : InputType.text;
+        text <=> root.text;
+        edited => { root.edited(); }
+        accepted => { root.accepted(); }
+    }
+}
+
+component TextButton inherits Text {
+    callback clicked;
+    height: 18px;
+    vertical-alignment: center;
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+component IconAction inherits Rectangle {
+    in property <string> icon-name: "";
+    in property <string> label: "";
+    in property <length> control-height: 34px;
+    in property <length> control-width: label == "" ? control-height : (icon-name == "" ? 72px : 84px);
+    in property <color> surface: #ffffff;
+    in property <color> hover-surface: surface;
+    in property <color> foreground: #4c5663;
+    in property <color> icon-color: #848d99;
+    in property <color> outline: Colors.transparent;
+    in property <length> border-thickness: 0px;
+    in property <length> icon-size: 15px;
+    in property <length> corner-radius: 6px;
+    in property <length> font-size: 10px;
+    in property <int> font-weight: 600;
+    in property <bool> auto-width: false;
+    out property <bool> hovered: action-hit.has-hover;
+    callback clicked;
+    width: auto-width ? content-row.preferred-width : control-width;
+    height: control-height;
+    border-color: outline;
+    border-width: border-thickness;
+    border-radius: corner-radius;
+    background: action-hit.has-hover ? hover-surface : surface;
+
+    content-row := HorizontalLayout {
+        width: 100%;
+        height: 100%;
+        alignment: center;
+        padding-left: label == "" ? 0px : (icon-name == "" ? 12px : 10px);
+        padding-right: label == "" ? 0px : (icon-name == "" ? 12px : 10px);
+        spacing: 7px;
+        if icon-name != "": UiIcon {
+            name: icon-name;
+            size: icon-size;
+            frame-height: root.height;
+            tint: icon-color;
+        }
+        if label != "": Text {
+            text: label;
+            color: foreground;
+            height: root.height;
+            font-size: font-size;
+            font-weight: font-weight;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+    }
+
+    action-hit := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+component StatusPill inherits Rectangle {
+    in property <string> kind: "idle";
+    in property <string> text;
+    in property <color> panel-soft: #f7f9fc;
+    in property <color> accent-soft: #e9f1fb;
+    in property <color> accent-strong: #1b4f87;
+    in property <color> amber-soft: #f7f0e6;
+    in property <color> amber-ink: #855318;
+    in property <color> muted: #848d99;
+    in property <color> danger: #b94b4b;
+    in property <color> danger-soft: #f7e9e9;
+    height: 24px;
+    width: min(pill-label.preferred-width + 20px, 340px);
+    border-radius: 12px;
+    background: kind == "checking" || kind == "ok" ? accent-soft
+        : kind == "update" ? amber-soft
+        : kind == "error" ? danger-soft
+        : panel-soft;
+
+    pill-label := Text {
+        x: 10px;
+        width: parent.width - 20px;
+        height: parent.height;
+        text: root.text;
+        color: root.kind == "checking" || root.kind == "ok" ? root.accent-strong
+            : root.kind == "update" ? root.amber-ink
+            : root.kind == "error" ? root.danger
+            : root.muted;
+        font-size: 11px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component CodeChip inherits Rectangle {
+    in property <string> text;
+    in property <color> ink-soft: #4c5663;
+    in property <color> panel-soft: #f7f9fc;
+    height: 20px;
+    width: min(chip-label.preferred-width + 14px, 340px);
+    border-radius: 4px;
+    background: panel-soft;
+
+    chip-label := Text {
+        x: 7px;
+        width: parent.width - 14px;
+        height: parent.height;
+        text: root.text;
+        color: root.ink-soft;
+        font-size: 10px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component ToolbarButton inherits Rectangle {
+    in property <string> icon-name;
+    in property <string> label;
+    in property <color> ink: #4c5663;
+    in property <color> muted: #848d99;
+    in property <color> panel-soft: #f7f9fc;
+    callback clicked;
+    height: 31px;
+    width: toolbar-label.preferred-width + 42px;
+    border-radius: 5px;
+    background: toolbar-hit.has-hover ? root.panel-soft : Colors.transparent;
+
+    toolbar-label := Text {
+        x: 30px;
+        width: parent.width - 38px;
+        height: 100%;
+        text: root.label;
+        color: root.ink;
+        font-size: 10px;
+        vertical-alignment: center;
+    }
+    UiIcon {
+        x: 8px;
+        name: root.icon-name;
+        size: 16px;
+        frame-height: root.height;
+        tint: root.muted;
+    }
+    toolbar-hit := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+component SelectPill inherits Rectangle {
+    in property <string> icon-name;
+    in property <string> value;
+    in property <length> control-width: 100px;
+    in property <color> ink: #4c5663;
+    in property <color> muted: #848d99;
+    in property <color> line: #e7ebf0;
+    in property <color> panel-soft: #f7f9fc;
+    callback clicked;
+    width: control-width;
+    height: 30px;
+    border-color: pill-hit.has-hover ? ink : line;
+    border-width: 1px;
+    border-radius: 6px;
+    background: panel-soft;
+
+    HorizontalLayout {
+        width: 100%;
+        height: 100%;
+        padding-left: 7px;
+        padding-right: 7px;
+        spacing: 6px;
+        UiIcon {
+            name: root.icon-name;
+            size: 14px;
+            frame-height: root.height;
+            tint: root.muted;
+        }
+        RowText {
+            row-height: root.height;
+            text: root.value;
+            color: root.ink;
+            font-size: 10px;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        UiIcon {
+            name: "chevron-down";
+            size: 10px;
+            frame-height: root.height;
+            tint: root.muted;
+        }
+    }
+
+    pill-hit := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
+component ContextMenuItem inherits Rectangle {
+    in property <string> icon-name;
+    in property <string> label;
+    in property <bool> destructive: false;
+    in property <color> foreground: #4c5663;
+    in property <color> muted: #848d99;
+    in property <color> accent-strong: #1b4f87;
+    in property <color> accent-soft: #e9f1fb;
+    callback clicked;
+    width: 100%;
+    height: 32px;
+    border-radius: 4px;
+    background: menu-hit.has-hover ? (destructive ? #b94b4b18 : root.accent-soft) : Colors.transparent;
+
+    HorizontalLayout {
+        height: 32px;
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 9px;
+        UiIcon {
+            name: icon-name;
+            size: 15px;
+            frame-height: 32px;
+            tint: destructive ? #b94b4b : (menu-hit.has-hover ? root.accent-strong : root.muted);
+        }
+        RowText {
+            row-height: 32px;
+            text: label;
+            color: destructive ? #b94b4b : (menu-hit.has-hover ? root.accent-strong : foreground);
+            font-size: 10px;
+            horizontal-stretch: 1;
+        }
+    }
+
+    menu-hit := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+export component MainWindow inherits Window {
+    title: "R2 List";
+    icon: @image-url("icons/app-icon.png");
+    preferred-width: 1280px;
+    preferred-height: 820px;
+    min-width: 1000px;
+    min-height: 640px;
+    max-width: 10000px;
+    max-height: 10000px;
+
+    in-out property <[FileRow]> files: [];
+    in-out property <[LocationRow]> locations: [];
+    in-out property <[BreadcrumbRow]> breadcrumbs: [];
+    in-out property <string> root-path: "";
+    in-out property <string> current-path: "";
+    in-out property <string> current-name: "";
+    in-out property <string> search: "";
+    in-out property <string> status: "Choose a folder to get started";
+    in-out property <string> selected-name: "";
+    in-out property <string> selected-path: "";
+    in-out property <string> selected-url: "";
+    in-out property <string> selected-kind: "";
+    in-out property <string> selected-size: "";
+    in-out property <string> selected-extension: "";
+    in-out property <string> selected-parent: "";
+    in-out property <string> selected-modified: "";
+    in-out property <string> preview-text: "";
+    in-out property <image> preview-image;
+    in-out property <bool> preview-image-visible: false;
+    in-out property <bool> has-selection: false;
+    in-out property <bool> preview-expanded: false;
+    in-out property <float> preview-anim: 0;
+    animate preview-anim { duration: 180ms; easing: linear; }
+    in-out property <bool> inspector-visible: true;
+    in-out property <bool> inspector-menu-visible: false;
+    in-out property <bool> context-menu-visible: false;
+    in-out property <length> context-menu-x: 0px;
+    in-out property <length> context-menu-y: 0px;
+    in-out property <string> context-target-path: "";
+    in-out property <string> context-target-name: "";
+    in-out property <bool> context-target-is-directory: false;
+    in-out property <bool> thumbnails: false;
+    in-out property <bool> language-menu-visible: false;
+    in-out property <bool> theme-menu-visible: false;
+    in-out property <bool> siblings-visible: false;
+    in-out property <[SiblingFolder]> siblings: [];
+    in-out property <string> theme-preference: "System";
+    in-out property <string> theme-mode: "system";
+    in-out property <bool> system-dark: false;
+    in-out property <string> locale: "en";
+    in-out property <string> current-location: "";
+    in-out property <string> location-label: "";
+    in-out property <string> location-kind: "local";
+    in-out property <string> base-url: "";
+    in-out property <string> base-url-display: "";
+    in-out property <string> prefix: "";
+    in-out property <string> bucket: "";
+    in-out property <string> template: "";
+    in-out property <string> location-endpoint: "";
+    in-out property <string> location-username: "";
+    in-out property <string> location-password: "";
+    in-out property <string> location-preview: "";
+    in-out property <string> config-directory: "";
+    in-out property <string> config-file: "";
+    in-out property <string> webdav-endpoint: "";
+    in-out property <string> webdav-username: "";
+    in-out property <string> webdav-password: "";
+    in-out property <bool> settings-visible: false;
+    in-out property <bool> location-editor-visible: false;
+    in-out property <bool> webdav-visible: false;
+    in-out property <bool> new-folder-visible: false;
+    in-out property <bool> location-menu-visible: false;
+    in-out property <string> location-actions-path: "";
+    in-out property <string> new-folder-name: "";
+    in-out property <string> entry-count: "0 items";
+    in-out property <string> entry-total: "0";
+    in-out property <string> connection-label: "LOCAL";
+    in-out property <bool> transfer-pending: false;
+    in-out property <bool> preferences-ready: false;
+    in-out property <bool> locale-follows-system: false;
+    in-out property <string> transfer-name: "";
+    in-out property <string> transfer-message: "";
+    in-out property <bool> sort-ascending: true;
+    in-out property <string> update-status: "Not checked";
+    in-out property <string> github-status: "Not checked";
+    in-out property <string> update-status-kind: "idle";
+    in-out property <string> github-status-kind: "idle";
+    in-out property <string> app-version: "";
+    in-out property <string> locale-en: "en";
+    in-out property <string> locale-fr: "fr";
+    in-out property <string> locale-zh-cn: "zh-CN";
+    in-out property <string> locale-zh-tw: "zh-TW";
+    in-out property <string> locale-ja: "ja";
+    in-out property <string> locale-ko: "ko";
+    in-out property <string> text-workspace: "WORKSPACE";
+    in-out property <string> text-object-workspace: "OBJECT WORKSPACE";
+    in-out property <string> text-files: "Files";
+    in-out property <string> text-url-rules: "URL rules";
+    in-out property <string> text-settings: "Settings";
+    in-out property <string> text-locations: "LOCATIONS";
+    in-out property <string> text-add-location: "Add location";
+    in-out property <string> text-local-folder: "Local folder";
+    in-out property <string> text-webdav-server: "WebDAV server";
+    in-out property <string> text-url-only: "URL mapping only";
+    in-out property <string> text-external-sync: "Sync handled externally";
+    in-out property <string> text-no-sync: "R2 sync is not performed by this app";
+    in-out property <string> text-local: "LOCAL";
+    in-out property <string> text-personal-workspace: "Personal workspace";
+    in-out property <string> text-local-directory: "LOCAL DIRECTORY";
+    in-out property <string> text-url-mapped: "URL MAPPED";
+    in-out property <string> text-add-files: "Add files";
+    in-out property <string> text-search: "Search files";
+    in-out property <string> text-search-placeholder: "Search files and folders…";
+    in-out property <string> text-new-folder: "New folder";
+    in-out property <string> text-name: "NAME";
+    in-out property <string> text-size: "SIZE";
+    in-out property <string> text-modified: "MODIFIED";
+    in-out property <string> text-empty-folder: "This folder is empty";
+    in-out property <string> text-no-siblings: "No other folders";
+    in-out property <string> text-empty-hint: "Add files or create a folder to get started.";
+    in-out property <string> text-no-matches: "No matching files";
+    in-out property <string> text-try-search: "Try another search term";
+    in-out property <string> text-back-parent: "Back to parent";
+    in-out property <string> text-edit-rules: "Edit rules";
+    in-out property <string> text-edit-location: "Edit location";
+    in-out property <string> text-more-actions: "More actions";
+    in-out property <string> text-added: "Added";
+    in-out property <string> text-storage-location: "Storage location";
+    in-out property <string> text-public-status: "Public status";
+    in-out property <string> text-configured: "Configured";
+    in-out property <string> text-not-configured: "Not configured";
+    in-out property <string> text-quick-look: "QUICK LOOK";
+    in-out property <string> text-preview: "Preview";
+    in-out property <string> text-choose-preview: "Choose a file to preview";
+    in-out property <string> text-object-url: "R2 OBJECT URL";
+    in-out property <string> text-copy-url: "Copy URL";
+    in-out property <string> text-markdown: "Markdown";
+    in-out property <string> text-html: "HTML";
+    in-out property <string> text-open: "Open";
+    in-out property <string> text-delete: "Delete";
+    in-out property <string> text-copy-item: "Copy item";
+    in-out property <string> text-move-item: "Move item";
+    in-out property <string> text-paste-here: "Paste here";
+    in-out property <string> text-language: "Language";
+    in-out property <string> text-language-system: "System language";
+    in-out property <string> text-theme-system: "System";
+    in-out property <string> text-theme-light: "Light";
+    in-out property <string> text-theme-dark: "Dark";
+    in-out property <string> text-save: "Save";
+    in-out property <string> text-settings-description: "Manage where configuration is stored, check for updates, and connect with GitHub.";
+    in-out property <string> text-configuration: "Configuration";
+    in-out property <string> text-config-folder: "Configuration folder";
+    in-out property <string> text-config-file: "Settings file";
+    in-out property <string> text-config-hint: "R2 List saves its settings file in this folder.";
+    in-out property <string> text-choose-folder: "Choose folder";
+    in-out property <string> text-reset: "Use default";
+    in-out property <string> text-about-updates: "ABOUT & UPDATES";
+    in-out property <string> text-version: "Version";
+    in-out property <string> text-latest-version: "Latest version";
+    in-out property <string> text-check-updates: "Check for updates";
+    in-out property <string> text-check-connection: "Test GitHub connection";
+    in-out property <string> text-github-project: "GitHub project";
+    in-out property <string> text-github-description: "Open the project page or review the latest release on GitHub.";
+    in-out property <string> text-latest-release: "Latest release";
+    in-out property <string> text-location-settings: "Location settings";
+    in-out property <string> text-location-name: "Location name";
+    in-out property <string> text-public-base-url: "Public base URL";
+    in-out property <string> text-object-prefix: "Object prefix (optional)";
+    in-out property <string> text-bucket: "Bucket (optional)";
+    in-out property <string> text-template: "Template: {base}/{key}";
+    in-out property <string> text-template-help: "Template placeholders: {base}, {key}, {path}, {bucket}";
+    in-out property <string> text-save-location: "Save location";
+    in-out property <string> text-connect-webdav: "Connect WebDAV";
+    in-out property <string> text-create-folder: "Create folder";
+    in-out property <string> text-cancel: "Cancel";
+    in-out property <string> text-close: "Close";
+    in-out property <string> text-folder-name: "Folder name";
+    in-out property <string> text-server-address: "Server address";
+    in-out property <string> text-username: "Username";
+    in-out property <string> text-password: "Password";
+    in-out property <string> text-connect: "Connect";
+    in-out property <string> text-directory: "Directory";
+    in-out property <string> text-copy-other: "Copy other formats";
+    in-out property <string> text-local-storage: "Local storage";
+
+    property <length> sidebar-width: 228px;
+    property <length> inspector-width: root.inspector-visible ? 316px : 0px;
+    property <length> content-width: max(420px, root.width - root.sidebar-width - root.inspector-width);
+    property <length> content-inner-width: max(0px, root.content-width - 62px);
+    property <int> thumbnail-columns: max(1, Math.floor((root.content-inner-width + 12px) / 160px));
+    property <length> thumbnail-card-width: max(120px,
+        (root.content-inner-width - 12px * (root.thumbnail-columns - 1)) / root.thumbnail-columns);
+
+    property <string> selected-icon: root.selected-kind == "directory" ? "folder"
+        : root.selected-kind == "image" ? "image"
+        : root.selected-kind == "video" ? "video"
+        : root.selected-kind == "audio" ? "audio"
+        : root.selected-kind == "archive" ? "archive"
+        : root.selected-kind == "text" ? "text"
+        : root.selected-kind == "document" ? "document"
+        : "file";
+    property <color> selected-icon-color: root.selected-kind == "directory" ? root.folder-icon
+        : root.selected-kind == "image" ? root.image-icon
+        : root.selected-kind == "video" ? root.video-icon
+        : root.selected-kind == "archive" ? root.archive-icon
+        : root.document-icon;
+
+    property <bool> dark-theme: root.theme-mode == "dark"
+        || (root.theme-mode == "system" && (root.system-dark || Palette.color-scheme == ColorScheme.dark));
+
+    property <color> canvas: dark-theme ? #171c24 : #f3f5f8;
+    property <color> panel: dark-theme ? #1d2430 : #ffffff;
+    property <color> panel-soft: dark-theme ? #242d3a : #f7f9fc;
+    property <color> ink: dark-theme ? #edf1f7 : #1f262e;
+    property <color> ink-soft: dark-theme ? #c1cad7 : #4c5663;
+    property <color> muted: dark-theme ? #8995a6 : #848d99;
+    property <color> line: dark-theme ? #303a49 : #e7ebf0;
+    property <color> line-strong: dark-theme ? #414d60 : #dce2ea;
+    property <color> accent: dark-theme ? #9bb8dc : #2563a8;
+    property <color> accent-soft: dark-theme ? #29374a : #e9f1fb;
+    property <color> accent-strong: dark-theme ? #bed2ed : #1b4f87;
+    property <color> primary: dark-theme ? #465e7d : #1d5a9e;
+    property <color> primary-hover: dark-theme ? #526d90 : #15497f;
+    property <color> primary-ink: dark-theme ? #f5f7fb : #f5f9ff;
+    property <color> brand-bg: dark-theme ? #34475f : #1d4f87;
+    property <color> brand-ink: dark-theme ? #e0e9f5 : #dbeaf9;
+    property <color> avatar-bg: dark-theme ? #34475f : #dbe7f3;
+    property <color> avatar-ink: dark-theme ? #c1d1e6 : #2f4f70;
+    property <color> folder-icon: dark-theme ? #d2b184 : #b58a52;
+    property <color> image-icon: dark-theme ? #9bb8dc : #4f7fae;
+    property <color> video-icon: dark-theme ? #aebbd0 : #687e9a;
+    property <color> document-icon: dark-theme ? #aeb8c6 : #78889c;
+    property <color> archive-icon: dark-theme ? #d2a26a : #b07d4d;
+    property <color> public-dot: dark-theme ? #9bb8dc : #4f7fae;
+    property <color> preview-stage-bg: dark-theme ? #1a222d : #e7ecf2;
+    property <color> field-bg: dark-theme ? #242d3a : #f7f9fc;
+    property <color> danger: dark-theme ? #d88787 : #b94b4b;
+    property <color> amber-soft: dark-theme ? #3d3429 : #f7f0e6;
+    property <color> amber-ink: dark-theme ? #e0b077 : #855318;
+    property <color> danger-soft: dark-theme ? #3a2a2a : #f7e9e9;
+
+    background: root.canvas;
+
+    callback open-folder(string);
+    callback connect-webdav(string, string, string);
+    callback activate-location(string);
+    callback remove-location(string);
+    callback edit-location(string);
+    callback navigate(string);
+    callback choose-folder();
+    callback navigate-up();
+    callback refresh();
+    callback filter-changed();
+    callback view-changed(bool);
+    callback sort-changed(bool);
+    callback create-folder(string);
+    callback import-files();
+    callback select-entry(string);
+    callback preview-selected();
+    callback open-selected();
+    callback copy-selected(string);
+    callback transfer-selected(string);
+    callback cancel-transfer();
+    callback paste-here();
+    callback paste-here-at(string);
+    callback delete-selected();
+    callback save-settings(string, string, string, string, string, string, string, string);
+    callback preview-rules(string, string, string, string);
+    callback load-siblings();
+    callback save-preferences(string, string);
+    callback choose-config-directory();
+    callback reset-config-directory();
+    callback check-updates();
+    callback check-github();
+    callback open-project(string);
+
+    changed locale => {
+        if root.preferences-ready {
+            root.save-preferences(root.locale-follows-system ? "" : root.locale, root.theme-preference);
+        }
+    }
+
+    changed theme-preference => {
+        if root.preferences-ready {
+            root.save-preferences(root.locale-follows-system ? "" : root.locale, root.theme-preference);
+        }
+    }
+
+    changed preview-expanded => {
+        root.preview-anim = root.preview-expanded ? 1 : 0;
+    }
+
+
+    FocusScope {
+        width: 100%;
+        height: 100%;
+
+        KeyBinding {
+            keys: @keys(Control + F);
+            activated => { search-field.focus-input(); }
+        }
+
+        KeyBinding {
+            keys: @keys(Escape);
+            activated => {
+                if root.settings-visible {
+                    root.settings-visible = false;
+                } else if root.location-editor-visible {
+                    root.location-editor-visible = false;
+                } else if root.webdav-visible {
+                    root.webdav-visible = false;
+                } else if root.new-folder-visible {
+                    root.new-folder-visible = false;
+                } else if root.siblings-visible {
+                    root.siblings-visible = false;
+                } else if root.language-menu-visible {
+                    root.language-menu-visible = false;
+                } else if root.theme-menu-visible {
+                    root.theme-menu-visible = false;
+                } else if root.context-menu-visible {
+                    root.context-menu-visible = false;
+                } else if root.inspector-menu-visible {
+                    root.inspector-menu-visible = false;
+                } else if root.preview-expanded {
+                    root.preview-expanded = false;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 0px;
+            Rectangle {
+                width: root.sidebar-width;
+                background: root.panel;
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: 100%;
+                    background: root.line;
+                }
+
+                VerticalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    padding-top: 22px;
+                    padding-bottom: 14px;
+                    spacing: 0px;
+
+                    HorizontalLayout {
+                        height: 48px;
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        spacing: 10px;
+
+                        VerticalLayout {
+                            height: 48px;
+                            alignment: center;
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: 8px;
+                                clip: true;
+                                background: Colors.transparent;
+                                Image {
+                                    width: 100%;
+                                    height: 100%;
+                                    image-fit: cover;
+                                    source: @image-url("icons/app-icon.png");
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            height: 48px;
+                            alignment: center;
+                            Text { text: "R2 List"; color: root.ink; font-size: 15px; font-weight: 800; height: 18px; vertical-alignment: center; }
+                        }
+                        Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                        VerticalLayout {
+                            height: 48px;
+                            alignment: center;
+                            IconAction {
+                                icon-name: "sliders";
+                                control-width: 31px;
+                                control-height: 31px;
+                                icon-size: 17px;
+                                surface: Colors.transparent;
+                                hover-surface: root.panel-soft;
+                                icon-color: root.muted;
+                                outline: Colors.transparent;
+                                clicked => { root.settings-visible = true; }
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 26px; background: Colors.transparent; }
+
+                    HorizontalLayout {
+                        height: 34px;
+                        padding-left: 10px;
+                        Text {
+                            width: 120px;
+                            height: 34px;
+                            text: root.text-locations;
+                            color: root.muted;
+                            font-size: 9px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                        VerticalLayout {
+                            height: 34px;
+                            alignment: center;
+                            IconAction {
+                                icon-name: "plus";
+                                control-width: 24px;
+                                control-height: 24px;
+                                icon-size: 14px;
+                                surface: Colors.transparent;
+                                hover-surface: root.panel-soft;
+                                icon-color: root.muted;
+                                outline: Colors.transparent;
+                                clicked => { root.location-menu-visible = !root.location-menu-visible; }
+                            }
+                        }
+                    }
+
+                    if root.location-menu-visible: Rectangle {
+                        border-color: root.line-strong;
+                        border-width: 1px;
+                        border-radius: 6px;
+                        background: root.panel;
+                        VerticalLayout {
+                            padding: 5px;
+                            spacing: 2px;
+                            ContextMenuItem {
+                                icon-name: "drive";
+                                label: root.text-local-folder;
+                                foreground: root.ink-soft;
+                                muted: root.muted;
+                                accent-strong: root.accent-strong;
+                                accent-soft: root.accent-soft;
+                                clicked => { root.location-menu-visible = false; root.choose-folder(); }
+                            }
+                            ContextMenuItem {
+                                icon-name: "cloud";
+                                label: root.text-webdav-server;
+                                foreground: root.ink-soft;
+                                muted: root.muted;
+                                accent-strong: root.accent-strong;
+                                accent-soft: root.accent-soft;
+                                clicked => { root.location-menu-visible = false; root.webdav-visible = true; }
+                            }
+                        }
+                    }
+
+                    ScrollView {
+                        vertical-stretch: 1;
+
+                        VerticalLayout {
+                            spacing: 2px;
+                            for location in root.locations: Rectangle {
+                                height: 48px;
+                                border-radius: 6px;
+                                property <bool> row-hovered: location-hit.has-hover || pencil-action.hovered || trash-action.hovered;
+                                background: (location.is-active || row-hovered)
+                                    ? root.panel-soft
+                                    : Colors.transparent;
+
+                                location-hit := TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    clicked => { root.activate-location(location.path); }
+                                }
+
+                                HorizontalLayout {
+                                    width: 100%;
+                                    height: 100%;
+                                    padding-left: 9px;
+                                    padding-right: 4px;
+                                    spacing: 9px;
+
+                                    VerticalLayout {
+                                        height: 48px;
+                                        alignment: center;
+                                        Rectangle {
+                                            width: 8px;
+                                            height: 8px;
+                                            border-radius: 4px;
+                                            background: location.kind == "webdav"
+                                                ? root.accent
+                                                : (root.dark-theme ? #91a9c8 : #5b8fc4);
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        height: 48px;
+                                        alignment: center;
+                                        spacing: 3px;
+                                        horizontal-stretch: 1;
+                                        Text {
+                                            width: 100%;
+                                            text: location.label;
+                                            color: root.ink-soft;
+                                            font-size: 11px;
+                                            font-weight: 600;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            width: 100%;
+                                            text: location.kind == "webdav" ? "WEBDAV" : location.path;
+                                            color: root.muted;
+                                            font-size: 10px;
+                                            overflow: elide;
+                                        }
+                                    }
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        background: Colors.transparent;
+                                    }
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 2px;
+                                        VerticalLayout {
+                                            height: 48px;
+                                            alignment: center;
+                                            pencil-action := IconAction {
+                                                icon-name: "pencil";
+                                                control-width: 26px;
+                                                control-height: 26px;
+                                                icon-size: 14px;
+                                                surface: Colors.transparent;
+                                                hover-surface: root.panel;
+                                                icon-color: root.muted;
+                                                outline: Colors.transparent;
+                                                opacity: row-hovered ? 1 : 0;
+                                                clicked => {
+                                                    root.edit-location(location.path);
+                                                    root.location-editor-visible = true;
+                                                }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            height: 48px;
+                                            alignment: center;
+                                            trash-action := IconAction {
+                                                icon-name: "trash";
+                                                control-width: 26px;
+                                                control-height: 26px;
+                                                icon-size: 14px;
+                                                surface: Colors.transparent;
+                                                hover-surface: root.panel;
+                                                icon-color: root.danger;
+                                                outline: Colors.transparent;
+                                                opacity: row-hovered ? 1 : 0;
+                                                clicked => { root.remove-location(location.path); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                height: 34px;
+                                border-radius: 5px;
+                                background: add-location-hit.has-hover ? root.panel-soft : Colors.transparent;
+
+                                add-location-hit := TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    clicked => { root.location-menu-visible = !root.location-menu-visible; }
+                                }
+
+                                HorizontalLayout {
+                                    width: 100%;
+                                    height: 100%;
+                                    padding-left: 27px;
+                                    padding-right: 10px;
+                                    spacing: 8px;
+                                    UiIcon { name: "plus"; size: 14px; frame-height: 34px; tint: root.muted; }
+                                    RowText {
+                                        row-height: 34px;
+                                        text: root.text-add-location;
+                                        color: root.muted;
+                                        font-size: 11px;
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+
+                    Rectangle { height: 1px; background: root.line; }
+
+                    HorizontalLayout {
+                        height: 34px;
+                        padding-left: 9px;
+                        padding-right: 9px;
+                        spacing: 7px;
+                        UiIcon { name: "shield"; size: 14px; frame-height: 34px; tint: root.accent; }
+                        RowText {
+                            row-height: 34px;
+                            text: root.text-no-sync;
+                            color: root.muted;
+                            font-size: 8px;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: root.line; }
+
+                    VerticalLayout {
+                        padding-top: 10px;
+                        padding-bottom: 12px;
+                        spacing: 6px;
+
+                        language-pill := SelectPill {
+                            icon-name: "language";
+                            value: root.locale;
+                            control-width: 200px;
+                            ink: root.ink-soft;
+                            muted: root.muted;
+                            line: root.line;
+                            panel-soft: root.panel-soft;
+                            clicked => {
+                                root.theme-menu-visible = false;
+                                root.siblings-visible = false;
+                                root.language-menu-visible = !root.language-menu-visible;
+                            }
+                        }
+                        theme-pill := SelectPill {
+                            icon-name: root.theme-mode == "dark" ? "moon" : "sun";
+                            value: root.theme-preference;
+                            control-width: 200px;
+                            ink: root.ink-soft;
+                            muted: root.muted;
+                            line: root.line;
+                            panel-soft: root.panel-soft;
+                            clicked => {
+                                root.language-menu-visible = false;
+                                root.siblings-visible = false;
+                                root.theme-menu-visible = !root.theme-menu-visible;
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                background: root.panel;
+
+                VerticalLayout {
+                    padding-left: 31px;
+                    padding-right: 31px;
+                    spacing: 0px;
+
+
+                    HorizontalLayout {
+                        vertical-stretch: 0;
+                        padding-top: 20px;
+                        padding-bottom: 16px;
+                        spacing: 16px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: start;
+                            spacing: 0px;
+
+                            sibling-anchor := HorizontalLayout {
+                                height: 18px;
+                                alignment: start;
+                                spacing: 2px;
+
+                                UiIcon { name: "home"; size: 13px; frame-height: 18px; tint: root.muted; }
+                                PathCrumb {
+                                    label: root.current-location == "" ? root.text-files : root.current-location;
+                                    ink: root.ink;
+                                    muted: root.muted;
+                                    accent: root.accent;
+                                    accent-soft: root.accent-soft;
+                                    panel-soft: root.panel-soft;
+                                    clicked => { root.navigate(""); }
+                                }
+                                for breadcrumb[index] in root.breadcrumbs: HorizontalLayout {
+                                    height: 18px;
+                                    spacing: 2px;
+                                    UiIcon { name: "chevron-right"; size: 10px; frame-height: 18px; tint: root.muted; }
+                                    PathCrumb {
+                                        label: breadcrumb.label;
+                                        current: index == root.breadcrumbs.length - 1;
+                                        ink: root.ink;
+                                        muted: root.muted;
+                                        accent: root.accent;
+                                        accent-soft: root.accent-soft;
+                                        panel-soft: root.panel-soft;
+                                        clicked => {
+                                            if index == root.breadcrumbs.length - 1 {
+                                                root.siblings-visible = !root.siblings-visible;
+                                                if root.siblings-visible {
+                                                    root.load-siblings();
+                                                }
+                                            } else {
+                                                root.navigate(breadcrumb.path);
+                                            }
+                                        }
+                                    }
+                                }
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                Text {
+                                    height: 18px;
+                                    text: root.entry-count;
+                                    color: root.muted;
+                                    font-size: 10px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: root.line; }
+
+                    HorizontalLayout {
+                        vertical-stretch: 0;
+                        height: 46px;
+                        padding-top: 7px;
+                        padding-bottom: 8px;
+                        spacing: 8px;
+
+                        Rectangle {
+                            width: 300px;
+                            height: 31px;
+                            border-color: root.line;
+                            border-width: 1px;
+                            border-radius: 5px;
+                            background: root.panel-soft;
+
+                            HorizontalLayout {
+                                width: 100%;
+                                height: 100%;
+                                padding-left: 9px;
+                                padding-right: 9px;
+                                spacing: 7px;
+                                UiIcon { name: "search"; size: 16px; frame-height: 31px; tint: root.muted; }
+                                search-field := FieldInput {
+                                    flat: true;
+                                    horizontal-stretch: 1;
+                                    height: 31px;
+                                    text <=> root.search;
+                                    placeholder-text: root.text-search-placeholder;
+                                    edited => { root.filter-changed(); }
+                                    ink: root.ink;
+                                    font-size: 10px;
+                                }
+                            }
+                        }
+
+                        Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+
+                        Rectangle {
+                            width: 60px;
+                            height: 31px;
+                            border-color: root.line;
+                            border-width: 1px;
+                            border-radius: 6px;
+                            background: root.panel-soft;
+
+                            HorizontalLayout {
+                                padding: 2px;
+                                spacing: 2px;
+                                IconAction {
+                                    icon-name: "list";
+                                    control-width: 27px;
+                                    control-height: 27px;
+                                    icon-size: 15px;
+                                    corner-radius: 4px;
+                                    surface: !root.thumbnails ? root.panel : Colors.transparent;
+                                    hover-surface: root.panel;
+                                    icon-color: !root.thumbnails ? root.accent : root.muted;
+                                    outline: Colors.transparent;
+                                    clicked => {
+                                        if root.thumbnails {
+                                            root.thumbnails = false;
+                                            root.view-changed(false);
+                                        }
+                                    }
+                                }
+                                IconAction {
+                                    icon-name: "grid";
+                                    control-width: 27px;
+                                    control-height: 27px;
+                                    icon-size: 15px;
+                                    corner-radius: 4px;
+                                    surface: root.thumbnails ? root.panel : Colors.transparent;
+                                    hover-surface: root.panel;
+                                    icon-color: root.thumbnails ? root.accent : root.muted;
+                                    outline: Colors.transparent;
+                                    clicked => {
+                                        if !root.thumbnails {
+                                            root.thumbnails = true;
+                                            root.view-changed(true);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        ToolbarButton {
+                            icon-name: "folder-plus";
+                            label: root.text-new-folder;
+                            ink: root.ink-soft;
+                            muted: root.muted;
+                            panel-soft: root.panel-soft;
+                            clicked => { root.new-folder-visible = true; }
+                        }
+
+                        ToolbarButton {
+                            icon-name: "upload";
+                            label: root.text-add-files;
+                            ink: root.ink-soft;
+                            muted: root.muted;
+                            panel-soft: root.panel-soft;
+                            clicked => { root.import-files(); }
+                        }
+
+                        VerticalLayout {
+                            height: 31px;
+                            alignment: center;
+                            Rectangle { width: 1px; height: 18px; background: root.line; }
+                        }
+
+                        IconAction {
+                            icon-name: root.sort-ascending ? "chevron-up" : "chevron-down";
+                            control-width: 31px;
+                            control-height: 31px;
+                            icon-size: 16px;
+                            surface: Colors.transparent;
+                            hover-surface: root.panel-soft;
+                            icon-color: root.muted;
+                            outline: Colors.transparent;
+                            clicked => {
+                                root.sort-ascending = !root.sort-ascending;
+                                root.sort-changed(root.sort-ascending);
+                            }
+                        }
+
+                        IconAction {
+                            icon-name: root.inspector-visible ? "sidebar-right" : "sidebar-right-open";
+                            control-width: 31px;
+                            control-height: 31px;
+                            icon-size: 17px;
+                            surface: Colors.transparent;
+                            hover-surface: root.panel-soft;
+                            icon-color: root.muted;
+                            outline: Colors.transparent;
+                            clicked => { root.inspector-visible = !root.inspector-visible; }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: root.line; }
+
+                    if root.transfer-pending: Rectangle {
+                        height: 50px;
+                        background: Colors.transparent;
+
+                        Rectangle {
+                            y: 9px;
+                            width: 100%;
+                            height: 34px;
+                            border-color: root.line-strong;
+                            border-width: 1px;
+                            border-radius: 6px;
+                            background: root.accent-soft;
+
+                            HorizontalLayout {
+                                width: 100%;
+                                height: 100%;
+                                padding-left: 11px;
+                                padding-right: 5px;
+                                spacing: 8px;
+
+                                UiIcon {
+                                    name: "clipboard-paste";
+                                    size: 15px;
+                                    frame-height: 34px;
+                                    tint: root.accent;
+                                }
+                                RowText {
+                                    row-height: 34px;
+                                    text: root.transfer-message;
+                                    color: root.ink-soft;
+                                    font-size: 10px;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                VerticalLayout {
+                                    height: 34px;
+                                    alignment: center;
+                                    IconAction {
+                                        icon-name: "clipboard-paste";
+                                        label: root.text-paste-here;
+                                        auto-width: true;
+                                        control-height: 28px;
+                                        icon-size: 14px;
+                                        corner-radius: 5px;
+                                        surface: root.panel;
+                                        hover-surface: root.panel-soft;
+                                        foreground: root.accent-strong;
+                                        icon-color: root.accent-strong;
+                                        outline: root.line-strong;
+                                        border-thickness: 1px;
+                                        clicked => { root.paste-here(); }
+                                    }
+                                }
+                                VerticalLayout {
+                                    height: 34px;
+                                    alignment: center;
+                                    IconAction {
+                                        icon-name: "close";
+                                        control-width: 26px;
+                                        control-height: 26px;
+                                        icon-size: 14px;
+                                        corner-radius: 4px;
+                                        surface: Colors.transparent;
+                                        hover-surface: root.panel;
+                                        icon-color: root.muted;
+                                        outline: Colors.transparent;
+                                        clicked => { root.cancel-transfer(); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.current-path != "": Rectangle {
+                        height: 34px;
+                        background: Colors.transparent;
+
+                        back-hit := TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            clicked => { root.navigate-up(); }
+                        }
+
+                        HorizontalLayout {
+                            width: 100%;
+                            height: 100%;
+                            padding-left: 8px;
+                            spacing: 7px;
+                            UiIcon { name: "back"; size: 14px; frame-height: 34px; tint: back-hit.has-hover ? root.accent : root.muted; }
+                            RowText {
+                                row-height: 34px;
+                                text: root.text-back-parent;
+                                color: back-hit.has-hover ? root.accent : root.muted;
+                                font-size: 10px;
+                            }
+                        }
+                    }
+
+                    if !root.thumbnails: HorizontalLayout {
+                        vertical-stretch: 0;
+                        height: 37px;
+                        spacing: 12px;
+                        padding-right: 4px;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 37px;
+                            background: Colors.transparent;
+                            RowText {
+                                x: 9px;
+                                width: parent.width - 9px;
+                                row-height: 37px;
+                                text: root.text-name;
+                                color: root.muted;
+                                font-size: 9px;
+                                font-weight: 500;
+                            }
+                        }
+                        RowText { row-height: 37px; text: root.text-size; color: root.muted; font-size: 9px; font-weight: 500; width: 80px; }
+                        RowText { row-height: 37px; text: root.text-modified; color: root.muted; font-size: 9px; font-weight: 500; width: 114px; }
+                        Rectangle { width: 24px; height: 37px; background: Colors.transparent; }
+                    }
+
+                    ScrollView {
+                        vertical-stretch: 1;
+
+                        if !root.thumbnails: VerticalLayout {
+                            spacing: 0px;
+                            for item in root.files: Rectangle {
+                                height: 47px;
+                                background: item.path == root.selected-path
+                                    ? root.accent-soft
+                                    : (row-hit.has-hover ? root.panel-soft : Colors.transparent);
+
+                                property <string> item-icon: item.kind == "directory" ? "folder"
+                                    : item.kind == "image" ? "image"
+                                    : item.kind == "video" ? "video"
+                                    : item.kind == "audio" ? "audio"
+                                    : item.kind == "archive" ? "archive"
+                                    : item.kind == "text" ? "text"
+                                    : item.kind == "document" ? "document"
+                                    : "file";
+                                property <color> item-icon-color: item.kind == "directory" ? root.folder-icon
+                                    : item.kind == "image" ? root.image-icon
+                                    : item.kind == "video" ? root.video-icon
+                                    : item.kind == "archive" ? root.archive-icon
+                                    : root.document-icon;
+
+                                row-hit := TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    pointer-event(event) => {
+                                        if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                                            root.select-entry(item.path);
+                                            root.context-target-path = item.path;
+                                            root.context-target-name = item.name;
+                                            root.context-target-is-directory = item.is-directory;
+                                            root.context-menu-x = max(8px, min(root.width - 226px, self.absolute-position.x + self.mouse-x));
+                                            root.context-menu-y = max(8px, min(root.height - (root.transfer-pending ? 294px : 260px) - 8px, self.absolute-position.y + self.mouse-y));
+                                            root.context-menu-visible = true;
+                                        }
+                                    }
+                                    clicked => {
+                                        root.context-menu-visible = false;
+                                        root.inspector-menu-visible = false;
+                                        root.select-entry(item.path);
+                                    }
+                                    double-clicked => {
+                                        if item.is-directory {
+                                            root.navigate(item.path);
+                                        } else {
+                                            root.select-entry(item.path);
+                                            root.preview-selected();
+                                            root.preview-expanded = true;
+                                        }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    width: 100%;
+                                    height: 100%;
+                                    spacing: 12px;
+                                    padding-right: 4px;
+
+                                    HorizontalLayout {
+                                        horizontal-stretch: 1;
+                                        height: 47px;
+                                        padding-left: 9px;
+                                        spacing: 10px;
+                                        UiIcon { name: item-icon; size: 18px; frame-height: 47px; tint: item-icon-color; }
+                                        VerticalLayout {
+                                            height: 47px;
+                                            alignment: center;
+                                            spacing: 2px;
+                                            horizontal-stretch: 1;
+                                            Text {
+                                                width: 100%;
+                                                text: item.name;
+                                                color: root.ink-soft;
+                                                font-size: 11px;
+                                                font-weight: 500;
+                                                overflow: elide;
+                                            }
+                                            if item.is-directory: Text {
+                                                width: 100%;
+                                                text: root.text-directory;
+                                                color: root.muted;
+                                                font-size: 9px;
+                                                overflow: elide;
+                                            }
+                                        }
+                                        if item.is-directory: UiIcon {
+                                            name: "chevron-right";
+                                            size: 15px;
+                                            frame-height: 47px;
+                                            tint: root.muted;
+                                        }
+                                    }
+
+                                    RowText { row-height: 47px; text: item.size; color: root.muted; font-size: 10px; width: 80px; }
+                                    RowText { row-height: 47px; text: item.modified; color: root.muted; font-size: 9px; width: 114px; }
+                                    VerticalLayout {
+                                        width: 24px;
+                                        height: 47px;
+                                        alignment: center;
+                                        IconAction {
+                                            icon-name: "more";
+                                            control-width: 24px;
+                                            control-height: 26px;
+                                            icon-size: 16px;
+                                            corner-radius: 4px;
+                                            surface: Colors.transparent;
+                                            hover-surface: root.line;
+                                            icon-color: root.muted;
+                                            outline: Colors.transparent;
+                                            opacity: (row-hit.has-hover || item.path == root.selected-path) ? 1 : 0;
+                                            clicked => {
+                                                root.select-entry(item.path);
+                                                root.context-target-path = item.path;
+                                                root.context-target-name = item.name;
+                                                root.context-target-is-directory = item.is-directory;
+                                                root.context-menu-x = max(8px, min(root.width - 226px, row-hit.absolute-position.x + row-hit.width - 226px));
+                                                root.context-menu-y = max(8px, min(root.height - (root.transfer-pending ? 294px : 260px) - 8px, row-hit.absolute-position.y));
+                                                root.context-menu-visible = true;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    y: parent.height - 1px;
+                                    width: 100%;
+                                    height: 1px;
+                                    background: root.line;
+                                }
+                            }
+                        }
+
+                        if root.thumbnails: GridLayout {
+                            padding-top: 12px;
+                            padding-left: 2px;
+                            padding-right: 2px;
+                            padding-bottom: 18px;
+                            spacing: 12px;
+                            for item[index] in root.files: Rectangle {
+                                row: Math.floor(index / root.thumbnail-columns);
+                                col: Math.mod(index, root.thumbnail-columns);
+                                width: root.thumbnail-card-width;
+                                height: image-height + 44px;
+                                border-color: item.path == root.selected-path ? root.accent : root.line;
+                                border-width: 1px;
+                                border-radius: 6px;
+                                background: item.path == root.selected-path ? root.accent-soft : root.panel;
+                                property <length> image-height: root.thumbnail-card-width / 1.35;
+                                property <string> item-icon: item.kind == "directory" ? "folder"
+                                    : item.kind == "image" ? "image"
+                                    : item.kind == "video" ? "video"
+                                    : item.kind == "audio" ? "audio"
+                                    : item.kind == "archive" ? "archive"
+                                    : item.kind == "text" ? "text"
+                                    : item.kind == "document" ? "document"
+                                    : "file";
+                                property <color> item-icon-color: item.kind == "directory" ? root.folder-icon
+                                    : item.kind == "image" ? root.image-icon
+                                    : item.kind == "video" ? root.video-icon
+                                    : item.kind == "archive" ? root.archive-icon
+                                    : root.document-icon;
+
+                                card-hit := TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    pointer-event(event) => {
+                                        if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                                            root.select-entry(item.path);
+                                            root.context-target-path = item.path;
+                                            root.context-target-name = item.name;
+                                            root.context-target-is-directory = item.is-directory;
+                                            root.context-menu-x = max(8px, min(root.width - 226px, self.absolute-position.x + self.mouse-x));
+                                            root.context-menu-y = max(8px, min(root.height - (root.transfer-pending ? 294px : 260px) - 8px, self.absolute-position.y + self.mouse-y));
+                                            root.context-menu-visible = true;
+                                        }
+                                    }
+                                    clicked => {
+                                        root.context-menu-visible = false;
+                                        root.inspector-menu-visible = false;
+                                        root.select-entry(item.path);
+                                    }
+                                    double-clicked => {
+                                        if item.is-directory {
+                                            root.navigate(item.path);
+                                        } else {
+                                            root.select-entry(item.path);
+                                            root.preview-selected();
+                                            root.preview-expanded = true;
+                                        }
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    width: 100%;
+                                    height: 100%;
+                                    spacing: 0px;
+                                    Rectangle {
+                                        width: 100%;
+                                        height: image-height;
+                                        background: root.panel-soft;
+                                        clip: true;
+                                        if item.has-thumbnail: Image {
+                                            source: item.thumbnail;
+                                            image-fit: cover;
+                                            width: 100%;
+                                            height: 100%;
+                                        }
+                                        if !item.has-thumbnail: HorizontalLayout {
+                                            alignment: center;
+                                            UiIcon { name: item-icon; size: 34px; frame-height: image-height; tint: item-icon-color; }
+                                        }
+                                    }
+                                    HorizontalLayout {
+                                        width: 100%;
+                                        height: 24px;
+                                        padding-left: 9px;
+                                        padding-right: 9px;
+                                        RowText {
+                                            row-height: 24px;
+                                            text: item.name;
+                                            color: root.ink;
+                                            font-size: 13px;
+                                            font-weight: 600;
+                                            overflow: elide;
+                                            horizontal-stretch: 1;
+                                        }
+                                    }
+                                    HorizontalLayout {
+                                        width: 100%;
+                                        height: 20px;
+                                        padding-left: 9px;
+                                        padding-right: 9px;
+                                        RowText {
+                                            row-height: 20px;
+                                            text: item.is-directory ? root.text-directory : item.size;
+                                            color: root.muted;
+                                            font-size: 11px;
+                                            horizontal-stretch: 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if root.files.length == 0: VerticalLayout {
+                            min-height: 210px;
+                            alignment: center;
+                            spacing: 9px;
+                            UiIcon { name: root.search == "" ? "files" : "search"; size: 20px; tint: root.muted; }
+                            Text {
+                                text: root.search == "" ? root.text-empty-folder : root.text-no-matches;
+                                color: root.ink-soft;
+                                font-size: 11px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: root.search == "" ? root.text-empty-hint : root.text-try-search;
+                                color: root.muted;
+                                font-size: 10px;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+
+                    if root.root-path != "": HorizontalLayout {
+                        vertical-stretch: 0;
+                        height: 39px;
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 7px;
+                        VerticalLayout {
+                            height: 39px;
+                            alignment: center;
+                            Rectangle {
+                                width: 5px;
+                                height: 5px;
+                                border-radius: 2.5px;
+                                background: root.dark-theme ? #d2a26a : #d49a61;
+                            }
+                        }
+                        RowText {
+                            row-height: 39px;
+                            text: (root.current-location == "" ? root.text-files : root.current-location) + (root.current-path != "" ? "/" + root.current-path : "");
+                            color: root.muted;
+                            font-size: 9px;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: root.line; }
+
+                    HorizontalLayout {
+                        vertical-stretch: 0;
+                        height: 32px;
+                        spacing: 6px;
+                        VerticalLayout {
+                            height: 32px;
+                            alignment: center;
+                            Rectangle { width: 6px; height: 6px; border-radius: 3px; background: root.public-dot; }
+                        }
+                        RowText {
+                            row-height: 32px;
+                            text: root.root-path != "" ? root.text-local-directory : root.text-choose-folder;
+                            color: root.muted;
+                            font-size: 9px;
+                        }
+                        Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                        RowText { row-height: 32px; text: "R2 URL"; color: root.muted; font-size: 9px; }
+                        RowText {
+                            row-height: 32px;
+                            text: root.base-url-display == "" ? root.base-url : root.base-url-display;
+                            color: root.ink-soft;
+                            font-size: 9px;
+                            font-weight: 500;
+                            overflow: elide;
+                            max-width: 360px;
+                        }
+                    }
+                }
+            }
+            if root.inspector-visible: Rectangle {
+                width: root.inspector-width;
+                background: root.panel;
+
+                Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    width: 1px;
+                    height: 100%;
+                    background: root.line;
+                }
+
+                VerticalLayout {
+                    padding-left: 19px;
+                    padding-right: 19px;
+                    padding-bottom: 12px;
+                    spacing: 0px;
+
+                    HorizontalLayout {
+                        height: 58px;
+                        spacing: 5px;
+                        VerticalLayout {
+                            height: 58px;
+                            alignment: center;
+                            spacing: 2px;
+                            Text { text: root.text-quick-look; color: root.muted; font-size: 9px; font-weight: 500; }
+                            Text { text: root.text-preview; color: root.ink; font-size: 13px; font-weight: 700; }
+                        }
+                        Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                        VerticalLayout {
+                            height: 58px;
+                            alignment: center;
+                            IconAction {
+                                icon-name: "more";
+                                control-width: 31px;
+                                control-height: 31px;
+                                icon-size: 18px;
+                                surface: Colors.transparent;
+                                hover-surface: root.panel-soft;
+                                icon-color: root.muted;
+                                outline: Colors.transparent;
+                                clicked => { root.inspector-menu-visible = !root.inspector-menu-visible; }
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: root.line; }
+
+                    ScrollView {
+                        vertical-stretch: 1;
+
+                        VerticalLayout {
+                            spacing: 0px;
+
+                            if root.has-selection: VerticalLayout {
+                                spacing: 0px;
+
+                                Rectangle { height: 19px; background: Colors.transparent; }
+
+                                Rectangle {
+                                    width: 100%;
+                                    height: (root.inspector-width - 38px) / 1.38;
+                                    border-color: root.line;
+                                    border-width: 1px;
+                                    border-radius: 5px;
+                                    background: root.preview-stage-bg;
+                                    clip: true;
+
+                                    if root.preview-image-visible: Image {
+                                        source: root.preview-image;
+                                        image-fit: cover;
+                                        width: 100%;
+                                        height: 100%;
+                                    }
+                                    if !root.preview-image-visible: VerticalLayout {
+                                        width: 100%;
+                                        alignment: center;
+                                        spacing: 9px;
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            UiIcon {
+                                                name: root.selected-icon;
+                                                size: 34px;
+                                                tint: root.selected-icon-color;
+                                            }
+                                        }
+                                        Text {
+                                            width: 100%;
+                                            text: root.selected-extension;
+                                            color: root.muted;
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                        }
+                                        if root.selected-kind != "directory": HorizontalLayout {
+                                            alignment: center;
+                                            IconAction {
+                                                icon-name: "image";
+                                                label: root.text-preview;
+                                                control-width: 86px;
+                                                control-height: 30px;
+                                                surface: root.panel;
+                                                hover-surface: root.panel-soft;
+                                                foreground: root.ink-soft;
+                                                icon-color: root.muted;
+                                                outline: root.line-strong;
+                                                border-thickness: 1px;
+                                                clicked => { root.preview-selected(); }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        x: parent.width - 35px;
+                                        y: parent.height - 35px;
+                                        width: 27px;
+                                        height: 27px;
+                                        border-color: #ffffff8c;
+                                        border-width: 1px;
+                                        border-radius: 5px;
+                                        background: #192434a6;
+                                        UiIcon { name: "download"; size: 15px; frame-height: 27px; tint: #ffffff; }
+                                        TouchArea {
+                                            width: 100%;
+                                            height: 100%;
+                                            clicked => { root.preview-expanded = true; }
+                                        }
+                                    }
+                                }
+
+                                Rectangle { height: 13px; background: Colors.transparent; }
+
+                                HorizontalLayout {
+                                    height: 18px;
+                                    spacing: 6px;
+                                    Rectangle {
+                                        width: filetype-text.preferred-width + 10px;
+                                        height: 18px;
+                                        border-color: root.line;
+                                        border-width: 1px;
+                                        border-radius: 3px;
+                                        background: Colors.transparent;
+                                        filetype-text := Text {
+                                            width: 100%;
+                                            height: 100%;
+                                            text: root.selected-extension == "" ? "FILE" : root.selected-extension;
+                                            color: root.muted;
+                                            font-size: 8px;
+                                            font-weight: 500;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+                                    }
+                                    Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                    RowText { row-height: 18px; text: root.selected-size; color: root.muted; font-size: 9px; }
+                                }
+
+                                Rectangle { height: 9px; background: Colors.transparent; }
+
+                                Text {
+                                    text: root.selected-name;
+                                    color: root.ink;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    wrap: word-wrap;
+                                }
+
+                                Rectangle { height: 7px; background: Colors.transparent; }
+
+                                HorizontalLayout {
+                                    height: 15px;
+                                    spacing: 6px;
+                                    UiIcon { name: "folder"; size: 13px; frame-height: 15px; tint: root.muted; }
+                                    RowText {
+                                        row-height: 15px;
+                                        text: root.selected-parent;
+                                        color: root.muted;
+                                        font-size: 9px;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                Rectangle { height: 17px; background: Colors.transparent; }
+                                Rectangle { height: 1px; background: root.line; }
+                                Rectangle { height: 15px; background: Colors.transparent; }
+
+                                HorizontalLayout {
+                                    height: 16px;
+                                    spacing: 6px;
+                                    RowText {
+                                        row-height: 16px;
+                                        text: root.text-object-url;
+                                        color: root.muted;
+                                        font-size: 8px;
+                                        font-weight: 500;
+                                        horizontal-stretch: 1;
+                                    }
+                                    VerticalLayout {
+                                        height: 16px;
+                                        alignment: center;
+                                        TextButton {
+                                            text: root.text-edit-rules;
+                                            color: root.accent;
+                                            font-size: 9px;
+                                            font-weight: 600;
+                                            clicked => {
+                                                root.edit-location(root.root-path);
+                                                root.location-editor-visible = true;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle { height: 9px; background: Colors.transparent; }
+
+                                Rectangle {
+                                    width: 100%;
+                                    height: 38px;
+                                    border-color: root.line;
+                                    border-width: 1px;
+                                    border-radius: 5px;
+                                    background: root.panel-soft;
+                                    VerticalLayout {
+                                        padding-left: 9px;
+                                        padding-right: 9px;
+                                        padding-top: 6px;
+                                        padding-bottom: 6px;
+                                        Text {
+                                            text: root.selected-url;
+                                            color: root.ink-soft;
+                                            font-size: 9px;
+                                            wrap: word-wrap;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 8px;
+                                    padding-top: 10px;
+
+                                    IconAction {
+                                        icon-name: "copy";
+                                        label: root.text-copy-url;
+                                        control-width: root.inspector-width - 48px;
+                                        control-height: 33px;
+                                        surface: root.panel;
+                                        hover-surface: root.accent-soft;
+                                        foreground: root.ink-soft;
+                                        icon-color: root.muted;
+                                        outline: root.line-strong;
+                                        border-thickness: 1px;
+                                        clicked => { root.copy-selected("url"); }
+                                    }
+                                    IconAction {
+                                        icon-name: "document";
+                                        label: root.text-markdown;
+                                        control-width: root.inspector-width - 48px;
+                                        control-height: 33px;
+                                        surface: root.panel-soft;
+                                        hover-surface: root.accent-soft;
+                                        foreground: root.ink-soft;
+                                        icon-color: root.muted;
+                                        outline: root.line-strong;
+                                        border-thickness: 1px;
+                                        clicked => { root.copy-selected("markdown"); }
+                                    }
+                                    IconAction {
+                                        icon-name: "archive";
+                                        label: root.text-html;
+                                        control-width: root.inspector-width - 48px;
+                                        control-height: 33px;
+                                        surface: root.panel-soft;
+                                        hover-surface: root.accent-soft;
+                                        foreground: root.ink-soft;
+                                        icon-color: root.muted;
+                                        outline: root.line-strong;
+                                        border-thickness: 1px;
+                                        clicked => { root.copy-selected("html"); }
+                                    }
+                                }
+
+                                Rectangle { height: 19px; background: Colors.transparent; }
+
+                                VerticalLayout {
+                                    spacing: 11px;
+                                    HorizontalLayout {
+                                        height: 13px;
+                                        RowText { row-height: 13px; text: root.text-added; color: root.muted; font-size: 9px; horizontal-stretch: 1; }
+                                        RowText { row-height: 13px; text: root.selected-modified; color: root.ink-soft; font-size: 9px; font-weight: 500; }
+                                    }
+                                    HorizontalLayout {
+                                        height: 13px;
+                                        RowText { row-height: 13px; text: root.text-storage-location; color: root.muted; font-size: 9px; horizontal-stretch: 1; }
+                                        RowText {
+                                            row-height: 13px;
+                                            text: root.connection-label == "WEBDAV" ? root.text-webdav-server : root.text-local-storage;
+                                            color: root.ink-soft;
+                                            font-size: 9px;
+                                            font-weight: 500;
+                                        }
+                                    }
+                                    HorizontalLayout {
+                                        height: 13px;
+                                        RowText { row-height: 13px; text: root.text-public-status; color: root.muted; font-size: 9px; horizontal-stretch: 1; }
+                                        HorizontalLayout {
+                                            height: 13px;
+                                            spacing: 5px;
+                                            alignment: end;
+                                            if root.selected-url != "": VerticalLayout {
+                                                height: 13px;
+                                                alignment: center;
+                                                Rectangle { width: 5px; height: 5px; border-radius: 2.5px; background: root.public-dot; }
+                                            }
+                                            RowText {
+                                                row-height: 13px;
+                                                text: root.selected-url == "" ? root.text-not-configured : root.text-configured;
+                                                color: root.ink-soft;
+                                                font-size: 9px;
+                                                font-weight: 500;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if root.inspector-menu-visible: Rectangle {
+                                    height: 4px;
+                                    background: Colors.transparent;
+                                }
+                                if root.inspector-menu-visible: Rectangle {
+                                    border-color: root.line;
+                                    border-width: 1px;
+                                    border-radius: 6px;
+                                    background: root.panel;
+                                    VerticalLayout {
+                                        padding: 5px;
+                                        spacing: 3px;
+                                        IconAction {
+                                            icon-name: "external";
+                                            label: root.text-open;
+                                            width: 100%;
+                                            control-height: 30px;
+                                            surface: Colors.transparent;
+                                            hover-surface: root.accent-soft;
+                                            foreground: root.ink-soft;
+                                            icon-color: root.muted;
+                                            outline: Colors.transparent;
+                                            clicked => { root.open-selected(); root.inspector-menu-visible = false; }
+                                        }
+                                        IconAction {
+                                            icon-name: "trash";
+                                            label: root.text-delete;
+                                            width: 100%;
+                                            control-height: 30px;
+                                            surface: Colors.transparent;
+                                            hover-surface: #b94b4b18;
+                                            foreground: root.danger;
+                                            icon-color: root.danger;
+                                            outline: Colors.transparent;
+                                            clicked => { root.delete-selected(); root.inspector-menu-visible = false; }
+                                        }
+                                        HorizontalLayout {
+                                            spacing: 3px;
+                                            IconAction {
+                                                icon-name: "copy";
+                                                label: root.text-copy-item;
+                                                width: 50%;
+                                                control-height: 30px;
+                                                surface: Colors.transparent;
+                                                hover-surface: root.accent-soft;
+                                                foreground: root.ink-soft;
+                                                icon-color: root.muted;
+                                                outline: Colors.transparent;
+                                                clicked => { root.transfer-selected("copy"); root.inspector-menu-visible = false; }
+                                            }
+                                            IconAction {
+                                                icon-name: "move";
+                                                label: root.text-move-item;
+                                                width: 50%;
+                                                control-height: 30px;
+                                                surface: Colors.transparent;
+                                                hover-surface: root.accent-soft;
+                                                foreground: root.ink-soft;
+                                                icon-color: root.muted;
+                                                outline: Colors.transparent;
+                                                clicked => { root.transfer-selected("move"); root.inspector-menu-visible = false; }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if root.preview-text != "": Rectangle {
+                                    height: 16px;
+                                    background: Colors.transparent;
+                                }
+                                if root.preview-text != "": Rectangle {
+                                    height: 1px;
+                                    background: root.line;
+                                }
+                                if root.preview-text != "": Rectangle {
+                                    height: 12px;
+                                    background: Colors.transparent;
+                                }
+                                if root.preview-text != "": Text {
+                                    text: root.preview-text;
+                                    color: root.ink-soft;
+                                    font-size: 11px;
+                                    wrap: word-wrap;
+                                    overflow: elide;
+                                }
+                            }
+
+                            if !root.has-selection: VerticalLayout {
+                                width: 100%;
+                                min-height: 210px;
+                                alignment: center;
+                                spacing: 10px;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    UiIcon { name: "image"; size: 24px; tint: root.muted; }
+                                }
+                                Text { text: root.text-choose-preview; color: root.muted; font-size: 10px; horizontal-alignment: center; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if root.siblings-visible: Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: Colors.transparent;
+
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                clicked => { root.siblings-visible = false; }
+            }
+
+            Rectangle {
+                x: min(root.width - 238px, max(8px, sibling-anchor.absolute-position.x));
+                y: sibling-anchor.absolute-position.y + sibling-anchor.height + 5px;
+                width: 230px;
+                height: min(248px, max(48px, (root.siblings.length * 30px) + 16px));
+                border-color: root.line-strong;
+                border-width: 1px;
+                border-radius: 7px;
+                background: root.panel;
+
+                if root.siblings.length == 0: Text {
+                    width: 100%;
+                    height: 46px;
+                    text: root.text-no-siblings;
+                    color: root.muted;
+                    font-size: 10px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                if root.siblings.length > 0: ScrollView {
+                    VerticalLayout {
+                        padding: 5px;
+                        spacing: 1px;
+                        for sibling in root.siblings: Rectangle {
+                            height: 29px;
+                            border-radius: 4px;
+                            background: sibling-hit.has-hover ? root.accent-soft : Colors.transparent;
+
+                            HorizontalLayout {
+                                width: 100%;
+                                height: 100%;
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                spacing: 7px;
+                                UiIcon {
+                                    name: "folder";
+                                    size: 14px;
+                                    frame-height: 29px;
+                                    tint: sibling.is-current ? root.accent : root.muted;
+                                }
+                                RowText {
+                                    row-height: 29px;
+                                    text: sibling.name;
+                                    color: sibling.is-current ? root.accent-strong : root.ink-soft;
+                                    font-size: 10px;
+                                    font-weight: sibling.is-current ? 600 : 400;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                            }
+
+                            sibling-hit := TouchArea {
+                                width: 100%;
+                                height: 100%;
+                                clicked => {
+                                    root.siblings-visible = false;
+                                    root.navigate(sibling.path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.language-menu-visible: Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: Colors.transparent;
+
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                clicked => { root.language-menu-visible = false; }
+            }
+
+            Rectangle {
+                x: min(root.width - 176px, max(8px, language-pill.absolute-position.x));
+                y: max(8px, language-pill.absolute-position.y - 232px - 4px);
+                width: 168px;
+                height: 232px;
+                border-color: root.line-strong;
+                border-width: 1px;
+                border-radius: 7px;
+                background: root.panel;
+
+                VerticalLayout {
+                    padding: 5px;
+                    spacing: 2px;
+                    for item in [root.text-language-system, root.locale-en, root.locale-fr, root.locale-zh-cn, root.locale-zh-tw, root.locale-ja, root.locale-ko]: Rectangle {
+                        height: 30px;
+                        border-radius: 4px;
+                        background: lang-hit.has-hover ? root.accent-soft : Colors.transparent;
+                        Text {
+                            x: 9px;
+                            width: parent.width - 18px;
+                            height: 100%;
+                            text: item;
+                            color: lang-hit.has-hover ? root.accent-strong : root.ink-soft;
+                            font-size: 10px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        lang-hit := TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            clicked => {
+                                root.locale = item;
+                                root.locale-follows-system = item == root.text-language-system;
+                                root.language-menu-visible = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.theme-menu-visible: Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: Colors.transparent;
+
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                clicked => { root.theme-menu-visible = false; }
+            }
+
+            Rectangle {
+                x: min(root.width - 138px, max(8px, theme-pill.absolute-position.x));
+                y: max(8px, theme-pill.absolute-position.y - 104px - 4px);
+                width: 130px;
+                height: 104px;
+                border-color: root.line-strong;
+                border-width: 1px;
+                border-radius: 7px;
+                background: root.panel;
+
+                VerticalLayout {
+                    padding: 5px;
+                    spacing: 2px;
+                    for item in [root.text-theme-system, root.text-theme-light, root.text-theme-dark]: Rectangle {
+                        height: 30px;
+                        border-radius: 4px;
+                        background: theme-hit.has-hover ? root.accent-soft : Colors.transparent;
+                        Text {
+                            x: 9px;
+                            width: parent.width - 18px;
+                            height: 100%;
+                            text: item;
+                            color: theme-hit.has-hover ? root.accent-strong : root.ink-soft;
+                            font-size: 10px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        theme-hit := TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            clicked => {
+                                root.theme-preference = item;
+                                root.theme-menu-visible = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.context-menu-visible: Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: Colors.transparent;
+
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                clicked => { root.context-menu-visible = false; }
+            }
+
+            Rectangle {
+                x: root.context-menu-x;
+                y: root.context-menu-y;
+                width: 214px;
+                height: root.transfer-pending ? 292px : 260px;
+                border-color: root.line;
+                border-width: 1px;
+                border-radius: 7px;
+                background: root.panel;
+
+                VerticalLayout {
+                    padding: 6px;
+                    spacing: 2px;
+                    RowText {
+                        row-height: 30px;
+                        text: root.context-target-name;
+                        color: root.ink-soft;
+                        font-size: 10px;
+                        font-weight: 600;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        x: 8px;
+                    }
+                    ContextMenuItem {
+                        icon-name: "copy";
+                        label: root.text-copy-url;
+                        foreground: root.ink-soft;
+                        muted: root.muted;
+                        accent-strong: root.accent-strong;
+                        accent-soft: root.accent-soft;
+                        clicked => { root.context-menu-visible = false; root.copy-selected("url"); }
+                    }
+                    ContextMenuItem {
+                        icon-name: "document";
+                        label: root.text-markdown;
+                        foreground: root.ink-soft;
+                        muted: root.muted;
+                        accent-strong: root.accent-strong;
+                        accent-soft: root.accent-soft;
+                        clicked => { root.context-menu-visible = false; root.copy-selected("markdown"); }
+                    }
+                    ContextMenuItem {
+                        icon-name: "archive";
+                        label: root.text-html;
+                        foreground: root.ink-soft;
+                        muted: root.muted;
+                        accent-strong: root.accent-strong;
+                        accent-soft: root.accent-soft;
+                        clicked => { root.context-menu-visible = false; root.copy-selected("html"); }
+                    }
+                    Rectangle { height: 1px; background: root.line; }
+                    ContextMenuItem {
+                        icon-name: "copy";
+                        label: root.text-copy-item;
+                        foreground: root.ink-soft;
+                        muted: root.muted;
+                        accent-strong: root.accent-strong;
+                        accent-soft: root.accent-soft;
+                        clicked => { root.context-menu-visible = false; root.transfer-selected("copy"); }
+                    }
+                    ContextMenuItem {
+                        icon-name: "move";
+                        label: root.text-move-item;
+                        foreground: root.ink-soft;
+                        muted: root.muted;
+                        accent-strong: root.accent-strong;
+                        accent-soft: root.accent-soft;
+                        clicked => { root.context-menu-visible = false; root.transfer-selected("move"); }
+                    }
+                    ContextMenuItem {
+                        icon-name: "trash";
+                        label: root.text-delete;
+                        destructive: true;
+                        foreground: root.ink-soft;
+                        muted: root.muted;
+                        accent-strong: root.accent-strong;
+                        accent-soft: root.accent-soft;
+                        clicked => { root.context-menu-visible = false; root.delete-selected(); }
+                    }
+                    if root.transfer-pending: ContextMenuItem {
+                        icon-name: "folder";
+                        label: root.text-paste-here;
+                        foreground: root.ink-soft;
+                        muted: root.muted;
+                        accent-strong: root.accent-strong;
+                        accent-soft: root.accent-soft;
+                        clicked => {
+                            root.context-menu-visible = false;
+                            root.paste-here-at(root.context-target-is-directory ? root.context-target-path : root.current-path);
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            visible: root.preview-expanded || root.preview-anim > 0;
+            opacity: root.preview-anim;
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: #081218c2;
+
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: min(1000px, root.width - 48px);
+                        height: min(820px, root.height - 48px);
+                        border-color: root.line-strong;
+                        border-width: 1px;
+                        border-radius: 8px;
+                        background: root.panel;
+                        clip: true;
+
+                        VerticalLayout {
+                            spacing: 0px;
+                            HorizontalLayout {
+                                height: 58px;
+                                padding-left: 18px;
+                                padding-right: 18px;
+                                spacing: 16px;
+                                VerticalLayout {
+                                    height: 58px;
+                                    alignment: center;
+                                    spacing: 4px;
+                                    Text { text: root.text-preview; color: root.muted; font-size: 9px; font-weight: 500; }
+                                    Text { text: root.selected-name; color: root.ink; font-size: 13px; font-weight: 600; overflow: elide; }
+                                }
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                VerticalLayout {
+                                    height: 58px;
+                                    alignment: center;
+                                    IconAction {
+                                        icon-name: "close";
+                                        control-width: 31px;
+                                        control-height: 31px;
+                                        icon-size: 18px;
+                                        surface: Colors.transparent;
+                                        hover-surface: root.panel-soft;
+                                        icon-color: root.muted;
+                                        outline: Colors.transparent;
+                                        clicked => { root.preview-expanded = false; }
+                                    }
+                                }
+                            }
+                            Rectangle { height: 1px; background: root.line; }
+                            Rectangle {
+                                vertical-stretch: 1;
+                                background: #111722;
+                                if root.preview-image-visible: Image {
+                                    source: root.preview-image;
+                                    image-fit: contain;
+                                    width: 100%;
+                                    height: 100%;
+                                }
+                                if !root.preview-image-visible: ScrollView {
+                                    VerticalLayout {
+                                        padding: 22px;
+                                        Text {
+                                            text: root.preview-text;
+                                            color: #c1cad7;
+                                            font-size: 12px;
+                                            wrap: word-wrap;
+                                        }
+                                    }
+                                }
+                            }
+                            Rectangle { height: 1px; background: root.line; }
+                            HorizontalLayout {
+                                height: 40px;
+                                padding-left: 18px;
+                                padding-right: 18px;
+                                spacing: 12px;
+                                Text { text: root.selected-extension; color: root.muted; font-size: 10px; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                Text { text: root.selected-size; color: root.muted; font-size: 10px; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if root.settings-visible: Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: #121b2861;
+
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                clicked => { root.settings-visible = false; }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: min(560px, root.width - 40px);
+                        height: min(640px, root.height - 40px);
+                        border-color: root.line;
+                        border-width: 1px;
+                        border-radius: 9px;
+                        background: root.panel;
+                        clip: true;
+
+                        TouchArea {
+                            width: 100%;
+                            height: 100%;
+                        }
+
+                        VerticalLayout {
+                            padding: 24px;
+                            spacing: 0px;
+
+                            HorizontalLayout {
+                                height: 44px;
+                                spacing: 12px;
+                                VerticalLayout {
+                                    alignment: start;
+                                    spacing: 5px;
+                                    Text { text: "R2 LIST"; color: root.muted; font-size: 9px; font-weight: 500; }
+                                    Text { text: root.text-settings; color: root.ink; font-size: 20px; font-weight: 700; }
+                                }
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                VerticalLayout {
+                                    height: 44px;
+                                    alignment: center;
+                                    IconAction {
+                                        icon-name: "close";
+                                        control-width: 31px;
+                                        control-height: 31px;
+                                        icon-size: 18px;
+                                        surface: Colors.transparent;
+                                        hover-surface: root.panel-soft;
+                                        icon-color: root.muted;
+                                        outline: Colors.transparent;
+                                        clicked => { root.settings-visible = false; }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: root.text-settings-description;
+                                color: root.muted;
+                                font-size: 10px;
+                                wrap: word-wrap;
+                            }
+
+                            Rectangle { height: 14px; background: Colors.transparent; }
+
+                            ScrollView {
+                                vertical-stretch: 1;
+
+                                VerticalLayout {
+                                    spacing: 0px;
+                                    padding-right: 12px;
+
+                                    Rectangle { height: 1px; background: root.line; }
+                                    VerticalLayout {
+                                        padding-top: 16px;
+                                        padding-bottom: 16px;
+                                        spacing: 0px;
+                                        Text { text: root.text-configuration; color: root.ink; font-size: 13px; font-weight: 700; height: 20px; vertical-alignment: center; }
+                                        Rectangle { height: 9px; background: Colors.transparent; }
+                                        HorizontalLayout {
+                                            height: 24px;
+                                            spacing: 14px;
+                                            Text { text: root.text-config-folder; color: root.muted; font-size: 12px; vertical-alignment: center; }
+                                            Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                            CodeChip {
+                                                text: root.config-directory;
+                                                ink-soft: root.ink-soft;
+                                                panel-soft: root.panel-soft;
+                                            }
+                                        }
+                                        HorizontalLayout {
+                                            height: 24px;
+                                            spacing: 14px;
+                                            Text { text: root.text-config-file; color: root.muted; font-size: 12px; vertical-alignment: center; }
+                                            Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                            CodeChip {
+                                                text: root.config-file;
+                                                ink-soft: root.ink-soft;
+                                                panel-soft: root.panel-soft;
+                                            }
+                                        }
+                                        Rectangle { height: 6px; background: Colors.transparent; }
+                                        Text {
+                                            text: root.text-config-hint;
+                                            color: root.muted;
+                                            font-size: 11px;
+                                            wrap: word-wrap;
+                                        }
+                                        Rectangle { height: 12px; background: Colors.transparent; }
+                                        HorizontalLayout {
+                                            height: 34px;
+                                            spacing: 8px;
+                                            IconAction {
+                                                icon-name: "folder";
+                                                label: root.text-choose-folder;
+                                                auto-width: true;
+                                                control-height: 34px;
+                                                surface: root.panel;
+                                                hover-surface: root.panel-soft;
+                                                foreground: root.ink-soft;
+                                                icon-color: root.muted;
+                                                outline: root.line-strong;
+                                                border-thickness: 1px;
+                                                clicked => { root.choose-config-directory(); }
+                                            }
+                                            IconAction {
+                                                label: root.text-reset;
+                                                auto-width: true;
+                                                control-height: 34px;
+                                                surface: root.panel;
+                                                hover-surface: root.panel-soft;
+                                                foreground: root.ink-soft;
+                                                icon-color: root.muted;
+                                                outline: root.line-strong;
+                                                border-thickness: 1px;
+                                                clicked => { root.reset-config-directory(); }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle { height: 1px; background: root.line; }
+                                    VerticalLayout {
+                                        padding-top: 16px;
+                                        padding-bottom: 16px;
+                                        spacing: 0px;
+                                        Text { text: root.text-about-updates; color: root.ink; font-size: 13px; font-weight: 700; height: 20px; vertical-alignment: center; }
+                                        Rectangle { height: 9px; background: Colors.transparent; }
+                                        HorizontalLayout {
+                                            height: 24px;
+                                            spacing: 14px;
+                                            Text { text: root.text-version; color: root.muted; font-size: 12px; vertical-alignment: center; }
+                                            Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                            Text { text: root.app-version; color: root.ink; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                                        }
+                                        HorizontalLayout {
+                                            height: 26px;
+                                            spacing: 14px;
+                                            Text { text: root.text-latest-version; color: root.muted; font-size: 12px; vertical-alignment: center; }
+                                            Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                            StatusPill {
+                                                kind: root.update-status-kind;
+                                                text: root.update-status;
+                                                panel-soft: root.panel-soft;
+                                                accent-soft: root.accent-soft;
+                                                accent-strong: root.accent-strong;
+                                                amber-soft: root.amber-soft;
+                                                amber-ink: root.amber-ink;
+                                                muted: root.muted;
+                                                danger: root.danger;
+                                                danger-soft: root.danger-soft;
+                                            }
+                                        }
+                                        HorizontalLayout {
+                                            height: 26px;
+                                            spacing: 14px;
+                                            Text { text: "GitHub"; color: root.muted; font-size: 12px; vertical-alignment: center; }
+                                            Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                            StatusPill {
+                                                kind: root.github-status-kind;
+                                                text: root.github-status;
+                                                panel-soft: root.panel-soft;
+                                                accent-soft: root.accent-soft;
+                                                accent-strong: root.accent-strong;
+                                                amber-soft: root.amber-soft;
+                                                amber-ink: root.amber-ink;
+                                                muted: root.muted;
+                                                danger: root.danger;
+                                                danger-soft: root.danger-soft;
+                                            }
+                                        }
+                                        Rectangle { height: 12px; background: Colors.transparent; }
+                                        HorizontalLayout {
+                                            height: 34px;
+                                            spacing: 8px;
+                                            IconAction {
+                                                icon-name: "refresh";
+                                                label: root.text-check-updates;
+                                                auto-width: true;
+                                                control-height: 34px;
+                                                surface: root.panel;
+                                                hover-surface: root.panel-soft;
+                                                foreground: root.ink-soft;
+                                                icon-color: root.muted;
+                                                outline: root.line-strong;
+                                                border-thickness: 1px;
+                                                clicked => { root.check-updates(); }
+                                            }
+                                            IconAction {
+                                                icon-name: "link";
+                                                label: root.text-check-connection;
+                                                auto-width: true;
+                                                control-height: 34px;
+                                                surface: root.panel;
+                                                hover-surface: root.panel-soft;
+                                                foreground: root.ink-soft;
+                                                icon-color: root.muted;
+                                                outline: root.line-strong;
+                                                border-thickness: 1px;
+                                                clicked => { root.check-github(); }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle { height: 1px; background: root.line; }
+                                    VerticalLayout {
+                                        padding-top: 16px;
+                                        padding-bottom: 16px;
+                                        spacing: 0px;
+                                        Text { text: root.text-github-project; color: root.ink; font-size: 13px; font-weight: 700; height: 20px; vertical-alignment: center; }
+                                        Rectangle { height: 9px; background: Colors.transparent; }
+                                        Text {
+                                            text: root.text-github-description;
+                                            color: root.muted;
+                                            font-size: 11px;
+                                            wrap: word-wrap;
+                                        }
+                                        Rectangle { height: 12px; background: Colors.transparent; }
+                                        HorizontalLayout {
+                                            height: 34px;
+                                            spacing: 8px;
+                                            IconAction {
+                                                icon-name: "external";
+                                                label: root.text-github-project;
+                                                auto-width: true;
+                                                control-height: 34px;
+                                                surface: root.panel;
+                                                hover-surface: root.panel-soft;
+                                                foreground: root.ink-soft;
+                                                icon-color: root.muted;
+                                                outline: root.line-strong;
+                                                border-thickness: 1px;
+                                                clicked => { root.open-project("https://github.com/Kaiyuan/r2-list"); }
+                                            }
+                                            IconAction {
+                                                icon-name: "download";
+                                                label: root.text-latest-release;
+                                                auto-width: true;
+                                                control-height: 34px;
+                                                surface: root.panel;
+                                                hover-surface: root.panel-soft;
+                                                foreground: root.ink-soft;
+                                                icon-color: root.muted;
+                                                outline: root.line-strong;
+                                                border-thickness: 1px;
+                                                clicked => { root.open-project("https://github.com/Kaiyuan/r2-list/releases/latest"); }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle { vertical-stretch: 1; background: Colors.transparent; }
+                                }
+                            }
+
+                            Rectangle { height: 1px; background: root.line; }
+                            Rectangle { height: 14px; background: Colors.transparent; }
+                            HorizontalLayout {
+                                height: 34px;
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                IconAction {
+                                    label: root.text-close;
+                                    control-width: 78px;
+                                    control-height: 34px;
+                                    surface: root.primary;
+                                    hover-surface: root.primary-hover;
+                                    foreground: root.primary-ink;
+                                    icon-color: root.primary-ink;
+                                    outline: root.primary;
+                                    border-thickness: 1px;
+                                    clicked => { root.settings-visible = false; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.location-editor-visible: Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: #121b2861;
+
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                clicked => { root.location-editor-visible = false; }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: min(470px, root.width - 40px);
+                        height: min(640px, root.height - 40px);
+                        border-color: root.line;
+                        border-width: 1px;
+                        border-radius: 9px;
+                        background: root.panel;
+                        clip: true;
+
+                        TouchArea {
+                            width: 100%;
+                            height: 100%;
+                        }
+
+                        VerticalLayout {
+                            padding: 24px;
+                            spacing: 0px;
+
+                            HorizontalLayout {
+                                height: 46px;
+                                spacing: 12px;
+                                VerticalLayout {
+                                    alignment: start;
+                                    spacing: 5px;
+                                    Text { text: root.text-locations; color: root.muted; font-size: 9px; font-weight: 500; }
+                                    Text { text: root.text-location-settings; color: root.ink; font-size: 20px; font-weight: 700; }
+                                }
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                VerticalLayout {
+                                    height: 46px;
+                                    alignment: center;
+                                    IconAction {
+                                        icon-name: "close";
+                                        control-width: 31px;
+                                        control-height: 31px;
+                                        icon-size: 18px;
+                                        surface: Colors.transparent;
+                                        hover-surface: root.panel-soft;
+                                        icon-color: root.muted;
+                                        outline: Colors.transparent;
+                                        clicked => { root.location-editor-visible = false; }
+                                    }
+                                }
+                            }
+
+                            Rectangle { height: 8px; background: Colors.transparent; }
+
+                            ScrollView {
+                                vertical-stretch: 1;
+
+                                VerticalLayout {
+                                    spacing: 10px;
+                                    padding-right: 12px;
+
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: root.text-location-name; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                        FieldInput {
+                                            field-bg: root.field-bg;
+                                            outline: root.line-strong;
+                                            muted: root.muted;
+                                            height: 36px;
+                                            text <=> root.location-label;
+                                            ink: root.ink;
+                                            font-size: 10px;
+                                        }
+                                    }
+
+                                    if root.location-kind == "webdav": VerticalLayout {
+                                        spacing: 10px;
+                                        VerticalLayout {
+                                            spacing: 6px;
+                                            Text { text: root.text-server-address; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                            FieldInput {
+                                                field-bg: root.field-bg;
+                                                outline: root.line-strong;
+                                                muted: root.muted;
+                                                height: 36px;
+                                                text <=> root.location-endpoint;
+                                                ink: root.ink;
+                                                font-size: 10px;
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            spacing: 6px;
+                                            Text { text: root.text-username; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                            FieldInput {
+                                                field-bg: root.field-bg;
+                                                outline: root.line-strong;
+                                                muted: root.muted;
+                                                height: 36px;
+                                                text <=> root.location-username;
+                                                ink: root.ink;
+                                                font-size: 10px;
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            spacing: 6px;
+                                            Text { text: root.text-password; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                            FieldInput {
+                                                field-bg: root.field-bg;
+                                                outline: root.line-strong;
+                                                muted: root.muted;
+                                                height: 36px;
+                                                text <=> root.location-password;
+                                                password: true;
+                                                ink: root.ink;
+                                                font-size: 10px;
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle { height: 4px; background: Colors.transparent; }
+                                    Text { text: root.text-url-rules; color: root.ink; font-size: 13px; font-weight: 700; height: 20px; vertical-alignment: center; }
+
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: root.text-public-base-url; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                        FieldInput {
+                                            field-bg: root.field-bg;
+                                            outline: root.line-strong;
+                                            muted: root.muted;
+                                            height: 36px;
+                                            text <=> root.base-url;
+                                            placeholder-text: "https://cdn.example.com";
+                                            edited => { root.preview-rules(root.base-url, root.prefix, root.bucket, root.template); }
+                                            ink: root.ink;
+                                            font-size: 10px;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: root.text-object-prefix; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                        FieldInput {
+                                            field-bg: root.field-bg;
+                                            outline: root.line-strong;
+                                            muted: root.muted;
+                                            height: 36px;
+                                            text <=> root.prefix;
+                                            edited => { root.preview-rules(root.base-url, root.prefix, root.bucket, root.template); }
+                                            ink: root.ink;
+                                            font-size: 10px;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: root.text-bucket; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                        FieldInput {
+                                            field-bg: root.field-bg;
+                                            outline: root.line-strong;
+                                            muted: root.muted;
+                                            height: 36px;
+                                            text <=> root.bucket;
+                                            edited => { root.preview-rules(root.base-url, root.prefix, root.bucket, root.template); }
+                                            ink: root.ink;
+                                            font-size: 10px;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: root.text-template; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                        FieldInput {
+                                            field-bg: root.field-bg;
+                                            outline: root.line-strong;
+                                            muted: root.muted;
+                                            height: 36px;
+                                            text <=> root.template;
+                                            edited => { root.preview-rules(root.base-url, root.prefix, root.bucket, root.template); }
+                                            ink: root.ink;
+                                            font-size: 10px;
+                                        }
+                                    }
+                                    Text {
+                                        text: root.text-template-help;
+                                        color: root.muted;
+                                        font-size: 9px;
+                                        wrap: word-wrap;
+                                    }
+                                    Rectangle {
+                                        width: 100%;
+                                        height: 42px;
+                                        border-radius: 5px;
+                                        background: root.panel-soft;
+                                        VerticalLayout {
+                                            padding-left: 9px;
+                                            padding-right: 9px;
+                                            Text { text: root.text-public-base-url; color: root.muted; font-size: 9px; }
+                                            Text { text: root.location-preview; color: root.ink-soft; font-size: 9px; wrap: word-wrap; overflow: elide; }
+                                        }
+                                    }
+
+                                    Rectangle { vertical-stretch: 1; background: Colors.transparent; }
+                                }
+                            }
+
+                            Rectangle { height: 14px; background: Colors.transparent; }
+                            HorizontalLayout {
+                                height: 34px;
+                                spacing: 8px;
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                IconAction {
+                                    label: root.text-cancel;
+                                    auto-width: true;
+                                    control-height: 34px;
+                                    surface: root.panel;
+                                    hover-surface: root.panel-soft;
+                                    foreground: root.ink-soft;
+                                    icon-color: root.muted;
+                                    outline: root.line-strong;
+                                    border-thickness: 1px;
+                                    clicked => { root.location-editor-visible = false; }
+                                }
+                                IconAction {
+                                    icon-name: "link";
+                                    label: root.text-save-location;
+                                    auto-width: true;
+                                    control-height: 34px;
+                                    surface: root.primary;
+                                    hover-surface: root.primary-hover;
+                                    foreground: root.primary-ink;
+                                    icon-color: root.primary-ink;
+                                    outline: root.primary;
+                                    border-thickness: 1px;
+                                    clicked => {
+                                        root.save-settings(root.location-label, root.base-url, root.prefix, root.bucket, root.template, root.location-endpoint, root.location-username, root.location-password);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.webdav-visible: Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: #121b2861;
+
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                clicked => { root.webdav-visible = false; }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: min(470px, root.width - 40px);
+                        height: min(410px, root.height - 40px);
+                        border-color: root.line;
+                        border-width: 1px;
+                        border-radius: 9px;
+                        background: root.panel;
+                        clip: true;
+
+                        TouchArea {
+                            width: 100%;
+                            height: 100%;
+                        }
+
+                        VerticalLayout {
+                            padding: 24px;
+                            spacing: 0px;
+
+                            HorizontalLayout {
+                                height: 46px;
+                                spacing: 12px;
+                                VerticalLayout {
+                                    alignment: start;
+                                    spacing: 5px;
+                                    Text { text: root.text-locations; color: root.muted; font-size: 9px; font-weight: 500; }
+                                    Text { text: root.text-connect-webdav; color: root.ink; font-size: 20px; font-weight: 700; }
+                                }
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                VerticalLayout {
+                                    height: 46px;
+                                    alignment: center;
+                                    IconAction {
+                                        icon-name: "close";
+                                        control-width: 31px;
+                                        control-height: 31px;
+                                        icon-size: 18px;
+                                        surface: Colors.transparent;
+                                        hover-surface: root.panel-soft;
+                                        icon-color: root.muted;
+                                        outline: Colors.transparent;
+                                        clicked => { root.webdav-visible = false; }
+                                    }
+                                }
+                            }
+
+                            Rectangle { height: 8px; background: Colors.transparent; }
+
+                            VerticalLayout {
+                                spacing: 10px;
+                                VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: root.text-server-address; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                    FieldInput {
+                                        field-bg: root.field-bg;
+                                        outline: root.line-strong;
+                                        muted: root.muted;
+                                        height: 36px;
+                                        text <=> root.webdav-endpoint;
+                                        placeholder-text: "https://dav.example.com/remote.php/dav/files/user";
+                                        ink: root.ink;
+                                        font-size: 10px;
+                                    }
+                                }
+                                VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: root.text-username; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                    FieldInput {
+                                        field-bg: root.field-bg;
+                                        outline: root.line-strong;
+                                        muted: root.muted;
+                                        height: 36px;
+                                        text <=> root.webdav-username;
+                                        ink: root.ink;
+                                        font-size: 10px;
+                                    }
+                                }
+                                VerticalLayout {
+                                    spacing: 6px;
+                                    Text { text: root.text-password; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                    FieldInput {
+                                        field-bg: root.field-bg;
+                                        outline: root.line-strong;
+                                        muted: root.muted;
+                                        height: 36px;
+                                        text <=> root.webdav-password;
+                                        password: true;
+                                        ink: root.ink;
+                                        font-size: 10px;
+                                    }
+                                }
+                            }
+
+                            Rectangle { vertical-stretch: 1; background: Colors.transparent; }
+
+                            HorizontalLayout {
+                                height: 34px;
+                                spacing: 8px;
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                IconAction {
+                                    label: root.text-cancel;
+                                    auto-width: true;
+                                    control-height: 34px;
+                                    surface: root.panel;
+                                    hover-surface: root.panel-soft;
+                                    foreground: root.ink-soft;
+                                    icon-color: root.muted;
+                                    outline: root.line-strong;
+                                    border-thickness: 1px;
+                                    clicked => { root.webdav-visible = false; }
+                                }
+                                IconAction {
+                                    icon-name: "cloud";
+                                    label: root.text-connect;
+                                    auto-width: true;
+                                    control-height: 34px;
+                                    surface: root.primary;
+                                    hover-surface: root.primary-hover;
+                                    foreground: root.primary-ink;
+                                    icon-color: root.primary-ink;
+                                    outline: root.primary;
+                                    border-thickness: 1px;
+                                    clicked => {
+                                        root.connect-webdav(root.webdav-endpoint, root.webdav-username, root.webdav-password);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.new-folder-visible: Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            background: #121b2861;
+
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                clicked => { root.new-folder-visible = false; }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: min(420px, root.width - 40px);
+                        height: 236px;
+                        border-color: root.line;
+                        border-width: 1px;
+                        border-radius: 9px;
+                        background: root.panel;
+                        clip: true;
+
+                        TouchArea {
+                            width: 100%;
+                            height: 100%;
+                        }
+
+                        VerticalLayout {
+                            padding: 24px;
+                            spacing: 0px;
+
+                            HorizontalLayout {
+                                height: 46px;
+                                spacing: 12px;
+                                VerticalLayout {
+                                    alignment: start;
+                                    spacing: 5px;
+                                    Text { text: root.text-workspace; color: root.muted; font-size: 9px; font-weight: 500; }
+                                    Text { text: root.text-new-folder; color: root.ink; font-size: 20px; font-weight: 700; }
+                                }
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                VerticalLayout {
+                                    height: 46px;
+                                    alignment: center;
+                                    IconAction {
+                                        icon-name: "close";
+                                        control-width: 31px;
+                                        control-height: 31px;
+                                        icon-size: 18px;
+                                        surface: Colors.transparent;
+                                        hover-surface: root.panel-soft;
+                                        icon-color: root.muted;
+                                        outline: Colors.transparent;
+                                        clicked => { root.new-folder-visible = false; }
+                                    }
+                                }
+                            }
+
+                            Rectangle { height: 10px; background: Colors.transparent; }
+
+                            VerticalLayout {
+                                spacing: 6px;
+                                Text { text: root.text-folder-name; color: root.ink-soft; font-size: 10px; font-weight: 600; }
+                                FieldInput {
+                                    field-bg: root.field-bg;
+                                    outline: root.line-strong;
+                                    muted: root.muted;
+                                    height: 36px;
+                                    text <=> root.new-folder-name;
+                                    ink: root.ink;
+                                    font-size: 10px;
+                                }
+                            }
+
+                            Rectangle { vertical-stretch: 1; background: Colors.transparent; }
+
+                            HorizontalLayout {
+                                height: 34px;
+                                spacing: 8px;
+                                Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                IconAction {
+                                    label: root.text-cancel;
+                                    auto-width: true;
+                                    control-height: 34px;
+                                    surface: root.panel;
+                                    hover-surface: root.panel-soft;
+                                    foreground: root.ink-soft;
+                                    icon-color: root.muted;
+                                    outline: root.line-strong;
+                                    border-thickness: 1px;
+                                    clicked => { root.new-folder-visible = false; }
+                                }
+                                IconAction {
+                                    icon-name: "folder-plus";
+                                    label: root.text-create-folder;
+                                    auto-width: true;
+                                    control-height: 34px;
+                                    surface: root.primary;
+                                    hover-surface: root.primary-hover;
+                                    foreground: root.primary-ink;
+                                    icon-color: root.primary-ink;
+                                    outline: root.primary;
+                                    border-thickness: 1px;
+                                    clicked => { root.create-folder(root.new-folder-name); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

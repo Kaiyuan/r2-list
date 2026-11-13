@@ -1,0 +1,50 @@
+[package]
+name = "r2-list"
+version = "0.0.3"
+description = "A desktop workspace for Cloudflare R2 directory URL management"
+authors = ["R2 List"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "r2_list_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+slint-build = "1.14"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
+[dependencies]
+arboard = "3.6"
+rfd = "0.15"
+slint = "1.14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dav-xml-client = "0.2"
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+quick-xml = "0.42"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+open = "5"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+tempfile = "3"
+url = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+sys-locale = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
