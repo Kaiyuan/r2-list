@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#f5f6f2" />
     <meta
       name="description"
-      content="R2 List 是一个轻量桌面文件工作区，可将本地文件路径转换为 Cloudflare R2 对象 URL。"
+      content="R2 List 是一款轻量的原生桌面文件工作区，支持本地目录与 WebDAV，可将相对路径转换为 Cloudflare R2 对象 URL 并直接预览文件。"
     />
     <title>R2 List — Cloudflare R2 文件链接工作区</title>
     <style>
@@ -104,7 +104,7 @@
       }
 
       .intro {
-        max-width: 620px;
+        max-width: 660px;
         margin: 0 auto;
         color: #53625a;
         font-size: clamp(16px, 2vw, 19px);
@@ -158,7 +158,7 @@
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 24px;
-        padding: 70px 0 80px;
+        padding: 70px 0 60px;
       }
 
       .feature {
@@ -178,6 +178,94 @@
         color: #627067;
         font-size: 14px;
         line-height: 1.7;
+      }
+
+      .notes {
+        padding: 8px 0 24px;
+      }
+
+      .section-title {
+        margin: 0 0 10px;
+        font-size: clamp(24px, 3.4vw, 34px);
+        letter-spacing: -0.035em;
+        line-height: 1.15;
+      }
+
+      .section-intro {
+        max-width: 720px;
+        margin: 0;
+        color: #53625a;
+        font-size: 15px;
+        line-height: 1.75;
+      }
+
+      .notes ul {
+        margin: 18px 0 0;
+        padding-left: 22px;
+        color: #3f4c44;
+        font-size: 15px;
+        line-height: 1.85;
+      }
+
+      .notes li {
+        margin: 0 0 6px;
+      }
+
+      .notes li::marker {
+        color: #282f6c;
+      }
+
+      .downloads {
+        padding: 8px 0 72px;
+      }
+
+      .download-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin: 20px 0 14px;
+      }
+
+      .download-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 12px 14px;
+        border: 1px solid #e2e7e1;
+        border-radius: 10px;
+        background: rgb(255 255 255 / 65%);
+        font-size: 13px;
+        text-decoration: none;
+        color: inherit;
+      }
+
+      a.download-item:hover {
+        border-color: #c3ccd9;
+        background: #fff;
+      }
+
+      .download-item code {
+        color: #282f6c;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .download-note {
+        margin: 0;
+        color: #68756d;
+        font-size: 13px;
+        line-height: 1.8;
+      }
+
+      .docs-link {
+        display: inline-block;
+        margin-top: 12px;
+        color: #282f6c;
+        font-size: 13px;
+        font-weight: 650;
+        text-decoration: none;
       }
 
       footer {
@@ -212,7 +300,15 @@
         .features {
           grid-template-columns: 1fr;
           gap: 12px;
-          padding: 44px 0 56px;
+          padding: 44px 0 40px;
+        }
+
+        .download-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .download-item code {
+          font-size: 11px;
         }
       }
     </style>
@@ -239,12 +335,12 @@
 
       <main>
         <section class="hero">
-          <div class="eyebrow" data-i18n="heroEyebrow">Your files, ready for R2</div>
+          <div class="eyebrow" data-i18n="heroEyebrow">文件已就绪，轻松使用 R2</div>
           <p><img src="./images/r2list-icon.png" alt="R2 List" style="max-width: 256px;" data-i18n-attr="alt:appImageAlt"></p>
           <h1 data-i18n="heroTitle">整理文件，复制链接。</h1>
           <p class="intro" data-i18n="heroIntro">
-            R2 List 是一个轻量桌面文件工作区。选择本地目录，即可根据相对路径生成
-            Cloudflare R2 对象 URL，并快速复制为 URL、Markdown 或 HTML 链接。
+            R2 List 是一款轻量的原生桌面文件工作区，支持本地目录与 WebDAV 位置。根据相对路径生成
+            Cloudflare R2 对象 URL，直接预览文件，并复制为 URL、Markdown 或 HTML 链接。
           </p>
           <div class="actions">
             <a
@@ -259,8 +355,8 @@
         <figure class="screenshot">
           <img
             src="./images/r2list-windows.png"
-            alt="R2 List Windows 桌面界面截图"
-            width="1440"
+            alt="R2 List 桌面界面：WebDAV 目录与图片预览"
+            width="1340"
             height="900"
             data-i18n-attr="alt:screenshotAlt"
           />
@@ -269,16 +365,76 @@
         <section class="features" aria-label="功能" data-i18n-attr="aria-label:featuresLabel">
           <article class="feature">
             <h2 data-i18n="workspaceTitle">文件工作区</h2>
-            <p data-i18n="workspaceText">浏览、搜索本地目录，新建文件夹或导入文件；重名文件会自动改名，不覆盖原文件。</p>
+            <p data-i18n="workspaceText">浏览、搜索本地目录，新建文件夹或导入文件；重名文件自动改名，不覆盖原文件；双击即可打开文件夹或预览。</p>
+          </article>
+          <article class="feature">
+            <h2 data-i18n="webdavTitle">WebDAV 位置</h2>
+            <p data-i18n="webdavText">连接 WebDAV 服务器，像本地目录一样浏览远程文件，并生成同样的 R2 链接。</p>
           </article>
           <article class="feature">
             <h2 data-i18n="copyTitle">链接一键复制</h2>
-            <p data-i18n="copyText">根据目录相对路径生成 R2 对象 URL，并复制为纯链接、Markdown 或 HTML 格式。</p>
+            <p data-i18n="copyText">根据相对路径生成 R2 对象 URL，复制为纯链接、Markdown 或 HTML，并支持自定义 URL 规则。</p>
           </article>
           <article class="feature">
-            <h2 data-i18n="desktopTitle">桌面原生体验</h2>
-            <p data-i18n="desktopText">使用 Rust 和 Slint 构建原生桌面应用，支持 Windows、macOS 和 Linux。</p>
+            <h2 data-i18n="previewTitle">快捷预览</h2>
+            <p data-i18n="previewText">无需离开应用即可预览图片（PNG、JPEG、GIF、WebP、AVIF、SVG、TIFF）、视频、PDF、Markdown 和文本。</p>
           </article>
+          <article class="feature">
+            <h2 data-i18n="themeTitle">主题与语言</h2>
+            <p data-i18n="themeText">浅色/深色主题可跟随系统，界面支持六种语言切换。</p>
+          </article>
+          <article class="feature">
+            <h2 data-i18n="desktopTitle">原生跨平台</h2>
+            <p data-i18n="desktopText">使用 Rust 和 Slint 构建，支持 Windows、macOS 和 Linux（x64 与 ARM64）。</p>
+          </article>
+        </section>
+
+        <section class="notes">
+          <div class="eyebrow">v0.0.4</div>
+          <h2 class="section-title" data-i18n="notesTitle">0.0.4 更新内容</h2>
+          <p class="section-intro" data-i18n="notesIntro">本次发布用 Rust + Slint 原生应用替换了原来的网页界面。</p>
+          <ul>
+            <li data-i18n="note1">全新原生界面：侧栏、工具栏、文件列表、预览面板与状态栏全部重写。</li>
+            <li data-i18n="note2">新增 WebDAV 位置，可浏览远程目录并生成同样的 R2 链接。</li>
+            <li data-i18n="note3">内置预览面板，支持图片（新增 AVIF、SVG、TIFF）、视频、PDF、Markdown 与文本。</li>
+            <li data-i18n="note4">支持浅色/深色主题，可选择跟随系统外观。</li>
+            <li data-i18n="note5">默认过滤隐藏文件和系统文件，可在设置中开启显示。</li>
+            <li data-i18n="note6">单击选中、双击打开；预览面板可收起，工具栏与面包屑交互优化。</li>
+            <li data-i18n="note7">Windows 可执行文件内嵌应用图标；提供 Windows x64、macOS arm64/Intel、Linux x64/ARM64 免安装包。</li>
+          </ul>
+        </section>
+
+        <section class="downloads">
+          <h2 class="section-title" data-i18n="downloadTitle">下载</h2>
+          <p class="section-intro" data-i18n="downloadIntro">免安装压缩包，解压即用。当前版本 0.0.4。</p>
+          <div class="download-grid">
+            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-windows-x64-v0.0.4.zip">
+              <span>Windows x64</span>
+              <code>r2-list-windows-x64-v0.0.4.zip</code>
+            </a>
+            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-macos-arm64-v0.0.4.zip">
+              <span>macOS Apple Silicon</span>
+              <code>r2-list-macos-arm64-v0.0.4.zip</code>
+            </a>
+            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-macos-x64-10.15-v0.0.4.zip">
+              <span>macOS Intel</span>
+              <code>r2-list-macos-x64-10.15-v0.0.4.zip</code>
+            </a>
+            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-linux-x64-v0.0.4.zip">
+              <span>Linux x64</span>
+              <code>r2-list-linux-x64-v0.0.4.zip</code>
+            </a>
+            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-linux-arm64-v0.0.4.zip">
+              <span>Linux ARM64</span>
+              <code>r2-list-linux-arm64-v0.0.4.zip</code>
+            </a>
+          </div>
+          <p class="download-note" data-i18n="downloadNote">Windows 10 及以上；macOS 11 及以上（Intel 版支持 10.15+），未签名版本首次启动需右键「打开」；Linux 需 Ubuntu 24.04+ / glibc 2.39+ 及桌面图形库。</p>
+          <a
+            class="docs-link"
+            href="https://github.com/Kaiyuan/r2-list/blob/main/docs/portable-releases.md"
+            data-i18n="downloadDocs"
+          >查看平台要求与构建说明 →</a>
         </section>
       </main>
 
@@ -291,61 +447,205 @@
         en: {
           languageLabel: "Page language", repoLink: "View on GitHub →", heroEyebrow: "Your files, ready for R2",
           appImageAlt: "R2 List app icon", heroTitle: "Organize files. Copy links.",
-          heroIntro: "R2 List is a lightweight desktop workspace for files. Choose a local folder to build Cloudflare R2 object URLs from relative paths, then copy them as URLs, Markdown, or HTML.",
-          latestRelease: "Download latest release", allReleases: "All releases", screenshotAlt: "R2 List desktop app on Windows",
-          featuresLabel: "Features", workspaceTitle: "File workspace", workspaceText: "Browse and search local folders, create folders, or import files. Name conflicts are resolved without overwriting existing files.",
-          copyTitle: "Copy links in one click", copyText: "Build R2 object URLs from relative paths and copy them as plain URLs, Markdown, or HTML.",
-          desktopTitle: "Native desktop experience", desktopText: "Built with Rust and Slint for Windows, macOS, and Linux.",
+          heroIntro: "R2 List is a lightweight native desktop workspace for local folders and WebDAV servers. Build Cloudflare R2 object URLs from relative paths, preview files in place, and copy links as URLs, Markdown, or HTML.",
+          latestRelease: "Download latest release", allReleases: "All releases",
+          screenshotAlt: "R2 List desktop app showing a WebDAV folder and image preview",
+          featuresLabel: "Features",
+          workspaceTitle: "File workspace",
+          workspaceText: "Browse and search local folders, create folders, or import files. Name conflicts are resolved without overwriting existing files; double-click opens a folder or its preview.",
+          webdavTitle: "WebDAV locations",
+          webdavText: "Connect a WebDAV server and browse remote folders with the same URL generation and copy tools.",
+          copyTitle: "Copy links in one click",
+          copyText: "Build R2 object URLs from relative paths and copy them as plain URLs, Markdown, or HTML, with editable URL rules.",
+          previewTitle: "Quick preview",
+          previewText: "Preview images (PNG, JPEG, GIF, WebP, AVIF, SVG, TIFF), video, PDF, Markdown, and text without leaving the app.",
+          themeTitle: "Theme and language",
+          themeText: "Follow the system light or dark appearance, and switch the interface between six languages.",
+          desktopTitle: "Native and cross-platform",
+          desktopText: "Built with Rust and Slint for Windows, macOS, and Linux (x64 and ARM64).",
+          notesTitle: "What's new in 0.0.4",
+          notesIntro: "This release replaces the web-based interface with a native Rust and Slint application.",
+          note1: "A completely rebuilt native interface: sidebar, toolbar, file list, preview pane, and status bar.",
+          note2: "New WebDAV locations: browse remote folders and generate the same R2 links.",
+          note3: "Built-in preview for images (including AVIF, SVG, and TIFF), video, PDF, Markdown, and text.",
+          note4: "Light and dark themes, optionally following the system appearance.",
+          note5: "Hidden and system files are filtered by default and can be shown from Settings.",
+          note6: "Single-click selects, double-click opens; the preview pane can be collapsed.",
+          note7: "The Windows executable embeds the application icon; portable builds ship for Windows x64, macOS arm64/Intel, and Linux x64/ARM64.",
+          downloadTitle: "Downloads",
+          downloadIntro: "Portable archives — unpack and run. Version 0.0.4.",
+          downloadNote: "Windows 10 or later. macOS 11 or later (10.15 for the Intel build); unsigned builds need a right-click → Open on first launch. Linux needs Ubuntu 24.04+ / glibc 2.39+ with desktop graphics libraries.",
+          downloadDocs: "Platform requirements and build instructions →",
           footerText: "R2 List creates and copies URLs; it does not upload or sync files to Cloudflare R2."
         },
         fr: {
           languageLabel: "Langue de la page", repoLink: "Voir sur GitHub →", heroEyebrow: "Vos fichiers, prêts pour R2",
           appImageAlt: "Icône de l’application R2 List", heroTitle: "Organisez vos fichiers. Copiez les liens.",
-          heroIntro: "R2 List est un espace de travail de bureau léger pour vos fichiers. Choisissez un dossier local pour créer des URL d’objets Cloudflare R2 à partir des chemins relatifs, puis copiez-les en URL, Markdown ou HTML.",
-          latestRelease: "Télécharger la dernière version", allReleases: "Toutes les versions", screenshotAlt: "Application R2 List sur Windows",
-          featuresLabel: "Fonctionnalités", workspaceTitle: "Espace de fichiers", workspaceText: "Parcourez et recherchez les dossiers locaux, créez des dossiers ou importez des fichiers. Les doublons sont renommés sans écraser les fichiers existants.",
-          copyTitle: "Copiez les liens en un clic", copyText: "Créez des URL d’objets R2 à partir des chemins relatifs et copiez-les en URL, Markdown ou HTML.",
-          desktopTitle: "Une expérience de bureau native", desktopText: "Conçu avec Rust et Slint pour Windows, macOS et Linux.",
+          heroIntro: "R2 List est un espace de travail natif léger pour vos dossiers locaux et vos serveurs WebDAV. Créez des URL d’objets Cloudflare R2 à partir des chemins relatifs, prévisualisez les fichiers et copiez les liens en URL, Markdown ou HTML.",
+          latestRelease: "Télécharger la dernière version", allReleases: "Toutes les versions",
+          screenshotAlt: "Application R2 List affichant un dossier WebDAV et un aperçu d’image",
+          featuresLabel: "Fonctionnalités",
+          workspaceTitle: "Espace de fichiers",
+          workspaceText: "Parcourez et recherchez les dossiers locaux, créez des dossiers ou importez des fichiers. Les doublons sont renommés sans écraser les fichiers existants ; un double-clic ouvre un dossier ou son aperçu.",
+          webdavTitle: "Emplacements WebDAV",
+          webdavText: "Connectez un serveur WebDAV et parcourez les dossiers distants avec les mêmes outils de création et de copie de liens.",
+          copyTitle: "Copiez les liens en un clic",
+          copyText: "Créez des URL d’objets R2 à partir des chemins relatifs et copiez-les en URL, Markdown ou HTML, avec des règles d’URL modifiables.",
+          previewTitle: "Aperçu rapide",
+          previewText: "Prévisualisez images (PNG, JPEG, GIF, WebP, AVIF, SVG, TIFF), vidéos, PDF, Markdown et texte sans quitter l’application.",
+          themeTitle: "Thème et langue",
+          themeText: "Suivez l’apparence claire ou sombre du système et changez la langue de l’interface parmi six langues.",
+          desktopTitle: "Natif et multiplateforme",
+          desktopText: "Conçu avec Rust et Slint pour Windows, macOS et Linux (x64 et ARM64).",
+          notesTitle: "Nouveautés de la version 0.0.4",
+          notesIntro: "Cette version remplace l’interface web par une application native Rust et Slint.",
+          note1: "Interface native entièrement reconstruite : barre latérale, barre d’outils, liste de fichiers, volet d’aperçu et barre d’état.",
+          note2: "Nouveaux emplacements WebDAV : parcourez les dossiers distants et générez les mêmes liens R2.",
+          note3: "Aperçu intégré des images (dont AVIF, SVG et TIFF), vidéos, PDF, Markdown et texte.",
+          note4: "Thèmes clair et sombre, avec suivi facultatif de l’apparence du système.",
+          note5: "Les fichiers cachés et système sont masqués par défaut et peuvent être affichés dans les réglages.",
+          note6: "Un clic sélectionne, un double-clic ouvre ; le volet d’aperçu peut être replié.",
+          note7: "L’exécutable Windows intègre l’icône de l’application ; des versions portables sont fournies pour Windows x64, macOS arm64/Intel et Linux x64/ARM64.",
+          downloadTitle: "Téléchargements",
+          downloadIntro: "Archives portables — décompressez et lancez. Version 0.0.4.",
+          downloadNote: "Windows 10 ou ultérieur. macOS 11 ou ultérieur (10.15 pour la version Intel) ; les versions non signées nécessitent un clic droit → Ouvrir au premier lancement. Linux nécessite Ubuntu 24.04+ / glibc 2.39+ avec les bibliothèques graphiques de bureau.",
+          downloadDocs: "Configuration requise et compilation →",
           footerText: "R2 List crée et copie des URL ; il ne téléverse ni ne synchronise de fichiers vers Cloudflare R2."
         },
         "zh-CN": {
           languageLabel: "页面语言", repoLink: "查看 GitHub 项目 →", heroEyebrow: "文件已就绪，轻松使用 R2",
           appImageAlt: "R2 List 软件图标", heroTitle: "整理文件，复制链接。",
-          heroIntro: "R2 List 是一款轻量桌面文件工作区。选择本地目录，即可根据相对路径生成 Cloudflare R2 对象 URL，并快速复制为 URL、Markdown 或 HTML 链接。",
-          latestRelease: "下载最新版本", allReleases: "所有版本", screenshotAlt: "R2 List Windows 桌面界面截图",
-          featuresLabel: "功能", workspaceTitle: "文件工作区", workspaceText: "浏览、搜索本地目录，新建文件夹或导入文件；重名文件会自动改名，不覆盖原文件。",
-          copyTitle: "链接一键复制", copyText: "根据目录相对路径生成 R2 对象 URL，并复制为纯链接、Markdown 或 HTML 格式。",
-          desktopTitle: "桌面原生体验", desktopText: "使用 Rust 和 Slint 构建，支持 Windows、macOS 和 Linux。",
+          heroIntro: "R2 List 是一款轻量的原生桌面文件工作区，支持本地目录与 WebDAV 位置。根据相对路径生成 Cloudflare R2 对象 URL，直接预览文件，并复制为 URL、Markdown 或 HTML 链接。",
+          latestRelease: "下载最新版本", allReleases: "所有版本",
+          screenshotAlt: "R2 List 桌面界面：WebDAV 目录与图片预览",
+          featuresLabel: "功能",
+          workspaceTitle: "文件工作区",
+          workspaceText: "浏览、搜索本地目录，新建文件夹或导入文件；重名文件自动改名，不覆盖原文件；双击即可打开文件夹或预览。",
+          webdavTitle: "WebDAV 位置",
+          webdavText: "连接 WebDAV 服务器，像本地目录一样浏览远程文件，并生成同样的 R2 链接。",
+          copyTitle: "链接一键复制",
+          copyText: "根据相对路径生成 R2 对象 URL，复制为纯链接、Markdown 或 HTML，并支持自定义 URL 规则。",
+          previewTitle: "快捷预览",
+          previewText: "无需离开应用即可预览图片（PNG、JPEG、GIF、WebP、AVIF、SVG、TIFF）、视频、PDF、Markdown 和文本。",
+          themeTitle: "主题与语言",
+          themeText: "浅色/深色主题可跟随系统，界面支持六种语言切换。",
+          desktopTitle: "原生跨平台",
+          desktopText: "使用 Rust 和 Slint 构建，支持 Windows、macOS 和 Linux（x64 与 ARM64）。",
+          notesTitle: "0.0.4 更新内容",
+          notesIntro: "本次发布用 Rust + Slint 原生应用替换了原来的网页界面。",
+          note1: "全新原生界面：侧栏、工具栏、文件列表、预览面板与状态栏全部重写。",
+          note2: "新增 WebDAV 位置，可浏览远程目录并生成同样的 R2 链接。",
+          note3: "内置预览面板，支持图片（新增 AVIF、SVG、TIFF）、视频、PDF、Markdown 与文本。",
+          note4: "支持浅色/深色主题，可选择跟随系统外观。",
+          note5: "默认过滤隐藏文件和系统文件，可在设置中开启显示。",
+          note6: "单击选中、双击打开；预览面板可收起，工具栏与面包屑交互优化。",
+          note7: "Windows 可执行文件内嵌应用图标；提供 Windows x64、macOS arm64/Intel、Linux x64/ARM64 免安装包。",
+          downloadTitle: "下载",
+          downloadIntro: "免安装压缩包，解压即用。当前版本 0.0.4。",
+          downloadNote: "Windows 10 及以上；macOS 11 及以上（Intel 版支持 10.15+），未签名版本首次启动需右键「打开」；Linux 需 Ubuntu 24.04+ / glibc 2.39+ 及桌面图形库。",
+          downloadDocs: "查看平台要求与构建说明 →",
           footerText: "R2 List 只生成和复制 URL，不会上传或同步文件到 Cloudflare R2。"
         },
         "zh-TW": {
           languageLabel: "頁面語言", repoLink: "查看 GitHub 專案 →", heroEyebrow: "檔案就緒，輕鬆使用 R2",
           appImageAlt: "R2 List 軟體圖示", heroTitle: "整理檔案，複製連結。",
-          heroIntro: "R2 List 是一款輕量桌面檔案工作區。選取本機目錄，即可依相對路徑產生 Cloudflare R2 物件 URL，並快速複製為 URL、Markdown 或 HTML 連結。",
-          latestRelease: "下載最新版本", allReleases: "所有版本", screenshotAlt: "R2 List Windows 桌面介面截圖",
-          featuresLabel: "功能", workspaceTitle: "檔案工作區", workspaceText: "瀏覽、搜尋本機目錄，新增資料夾或匯入檔案；重複檔名會自動重新命名，不會覆蓋原檔。",
-          copyTitle: "一鍵複製連結", copyText: "依目錄相對路徑產生 R2 物件 URL，並複製為純文字連結、Markdown 或 HTML。",
-          desktopTitle: "原生桌面體驗", desktopText: "以 Rust 和 Slint 建置，支援 Windows、macOS 和 Linux。",
+          heroIntro: "R2 List 是一款輕量的原生桌面檔案工作區，支援本機目錄與 WebDAV 位置。依相對路徑產生 Cloudflare R2 物件 URL，直接預覽檔案，並複製為 URL、Markdown 或 HTML 連結。",
+          latestRelease: "下載最新版本", allReleases: "所有版本",
+          screenshotAlt: "R2 List 桌面介面：WebDAV 目錄與圖片預覽",
+          featuresLabel: "功能",
+          workspaceTitle: "檔案工作區",
+          workspaceText: "瀏覽、搜尋本機目錄，新增資料夾或匯入檔案；重複檔名會自動重新命名，不會覆蓋原檔；按兩下即可開啟資料夾或預覽。",
+          webdavTitle: "WebDAV 位置",
+          webdavText: "連線 WebDAV 伺服器，像本機目錄一樣瀏覽遠端檔案，並產生相同的 R2 連結。",
+          copyTitle: "一鍵複製連結",
+          copyText: "依相對路徑產生 R2 物件 URL，複製為純文字連結、Markdown 或 HTML，並支援自訂 URL 規則。",
+          previewTitle: "快速預覽",
+          previewText: "不必離開應用程式即可預覽圖片（PNG、JPEG、GIF、WebP、AVIF、SVG、TIFF）、影片、PDF、Markdown 與文字。",
+          themeTitle: "主題與語言",
+          themeText: "淺色/深色主題可跟隨系統，介面支援六種語言切換。",
+          desktopTitle: "原生跨平台",
+          desktopText: "以 Rust 和 Slint 建置，支援 Windows、macOS 和 Linux（x64 與 ARM64）。",
+          notesTitle: "0.0.4 更新內容",
+          notesIntro: "本次發佈以 Rust + Slint 原生應用程式取代原本的網頁介面。",
+          note1: "全新原生介面：側欄、工具列、檔案清單、預覽面板與狀態列全部重寫。",
+          note2: "新增 WebDAV 位置，可瀏覽遠端目錄並產生相同的 R2 連結。",
+          note3: "內建預覽面板，支援圖片（新增 AVIF、SVG、TIFF）、影片、PDF、Markdown 與文字。",
+          note4: "支援淺色/深色主題，可選擇跟隨系統外觀。",
+          note5: "預設過濾隱藏檔案與系統檔案，可在設定中開啟顯示。",
+          note6: "按一下選取、按兩下開啟；預覽面板可收合，工具列與麵包屑互動最佳化。",
+          note7: "Windows 執行檔內嵌應用程式圖示；提供 Windows x64、macOS arm64/Intel、Linux x64/ARM64 免安裝包。",
+          downloadTitle: "下載",
+          downloadIntro: "免安裝壓縮檔，解壓即用。目前版本 0.0.4。",
+          downloadNote: "Windows 10 以上；macOS 11 以上（Intel 版支援 10.15+），未簽署版本首次啟動需按右鍵「打開」；Linux 需 Ubuntu 24.04+ / glibc 2.39+ 及桌面圖形函式庫。",
+          downloadDocs: "查看平台需求與建置說明 →",
           footerText: "R2 List 僅產生及複製 URL，不會上傳或同步檔案至 Cloudflare R2。"
         },
         ja: {
           languageLabel: "ページの言語", repoLink: "GitHub で見る →", heroEyebrow: "ファイルを R2 ですぐ活用",
           appImageAlt: "R2 List アプリのアイコン", heroTitle: "ファイルを整理して、リンクをコピー。",
-          heroIntro: "R2 List は軽量なデスクトップファイルワークスペースです。ローカルフォルダーを選ぶと、相対パスから Cloudflare R2 オブジェクト URL を作成し、URL、Markdown、HTML 形式でコピーできます。",
-          latestRelease: "最新版をダウンロード", allReleases: "すべてのリリース", screenshotAlt: "Windows で動作する R2 List",
-          featuresLabel: "機能", workspaceTitle: "ファイルワークスペース", workspaceText: "ローカルフォルダーの閲覧や検索、新規フォルダーの作成、ファイルの取り込みに対応。重複した名前は既存ファイルを上書きせず変更します。",
-          copyTitle: "リンクをワンクリックでコピー", copyText: "相対パスから R2 オブジェクト URL を作成し、URL、Markdown、HTML 形式でコピーできます。",
-          desktopTitle: "デスクトップならではの使いやすさ", desktopText: "Rust と Slint で構築され、Windows、macOS、Linux に対応しています。",
+          heroIntro: "R2 List はローカルフォルダーと WebDAV に対応した軽量なネイティブデスクトップワークスペースです。相対パスから Cloudflare R2 オブジェクト URL を作成し、その場でプレビューして URL、Markdown、HTML 形式でコピーできます。",
+          latestRelease: "最新版をダウンロード", allReleases: "すべてのリリース",
+          screenshotAlt: "WebDAV フォルダーと画像プレビューを表示した R2 List",
+          featuresLabel: "機能",
+          workspaceTitle: "ファイルワークスペース",
+          workspaceText: "ローカルフォルダーの閲覧・検索、フォルダーの作成、ファイルの取り込みに対応。重複した名前は上書きせず変更し、ダブルクリックでフォルダーを開くかプレビューします。",
+          webdavTitle: "WebDAV の場所",
+          webdavText: "WebDAV サーバーに接続し、ローカルと同じ操作でリモートフォルダーを閲覧して R2 リンクを生成できます。",
+          copyTitle: "リンクをワンクリックでコピー",
+          copyText: "相対パスから R2 オブジェクト URL を作成し、URL、Markdown、HTML 形式でコピーできます。URL ルールも編集可能です。",
+          previewTitle: "クイックプレビュー",
+          previewText: "アプリを離れずに画像（PNG、JPEG、GIF、WebP、AVIF、SVG、TIFF）、動画、PDF、Markdown、テキストをプレビューできます。",
+          themeTitle: "テーマと言語",
+          themeText: "システムのライト/ダーク表示に追従でき、6 言語でインターフェースを切り替えられます。",
+          desktopTitle: "ネイティブでクロスプラットフォーム",
+          desktopText: "Rust と Slint で構築し、Windows、macOS、Linux（x64 / ARM64）に対応しています。",
+          notesTitle: "0.0.4 の新機能",
+          notesIntro: "今回のリリースで、Web ベースの画面を Rust + Slint のネイティブアプリに置き換えました。",
+          note1: "サイドバー、ツールバー、ファイル一覧、プレビュー、ステータスバーを全面的に作り直したネイティブ UI。",
+          note2: "WebDAV の場所を追加し、リモートフォルダーを閲覧して同じ R2 リンクを生成できます。",
+          note3: "画像（AVIF、SVG、TIFF を追加）、動画、PDF、Markdown、テキストのプレビューを内蔵。",
+          note4: "ライト/ダークテーマに対応し、システムの外観に追従できます。",
+          note5: "隠しファイルとシステムファイルは既定で非表示、設定から表示できます。",
+          note6: "シングルクリックで選択、ダブルクリックで開く。プレビューは折りたためます。",
+          note7: "Windows 実行ファイルにアプリアイコンを埋め込み。Windows x64、macOS arm64/Intel、Linux x64/ARM64 のポータブル版を提供。",
+          downloadTitle: "ダウンロード",
+          downloadIntro: "ポータブルアーカイブ — 解凍して実行するだけ。バージョン 0.0.4。",
+          downloadNote: "Windows 10 以降。macOS 11 以降（Intel 版は 10.15 以降）。未署名のため初回起動時は右クリック →「開く」が必要です。Linux は Ubuntu 24.04 以降 / glibc 2.39 以降とデスクトップ用グラフィックライブラリが必要です。",
+          downloadDocs: "動作要件とビルド手順を見る →",
           footerText: "R2 List は URL の作成とコピーのみを行い、Cloudflare R2 へのファイルのアップロードや同期は行いません。"
         },
         ko: {
           languageLabel: "페이지 언어", repoLink: "GitHub에서 보기 →", heroEyebrow: "파일을 R2에서 바로 활용하세요",
           appImageAlt: "R2 List 앱 아이콘", heroTitle: "파일을 정리하고 링크를 복사하세요.",
-          heroIntro: "R2 List는 가벼운 데스크톱 파일 작업 공간입니다. 로컬 폴더를 선택하면 상대 경로로 Cloudflare R2 객체 URL을 만들고 URL, Markdown 또는 HTML 형식으로 복사할 수 있습니다.",
-          latestRelease: "최신 버전 다운로드", allReleases: "모든 릴리스", screenshotAlt: "Windows용 R2 List 데스크톱 화면",
-          featuresLabel: "기능", workspaceTitle: "파일 작업 공간", workspaceText: "로컬 폴더 탐색과 검색, 폴더 만들기 및 파일 가져오기를 지원합니다. 이름이 겹치면 기존 파일을 덮어쓰지 않고 새 이름을 지정합니다.",
-          copyTitle: "한 번의 클릭으로 링크 복사", copyText: "상대 경로로 R2 객체 URL을 만들고 일반 URL, Markdown 또는 HTML 형식으로 복사할 수 있습니다.",
-          desktopTitle: "데스크톱 네이티브 경험", desktopText: "Rust와 Slint로 제작되어 Windows, macOS, Linux를 지원합니다.",
+          heroIntro: "R2 List는 로컬 폴더와 WebDAV를 지원하는 가벼운 네이티브 데스크톱 작업 공간입니다. 상대 경로로 Cloudflare R2 객체 URL을 만들고, 파일을 바로 미리 본 뒤 URL, Markdown, HTML 형식으로 복사할 수 있습니다.",
+          latestRelease: "최신 버전 다운로드", allReleases: "모든 릴리스",
+          screenshotAlt: "WebDAV 폴더와 이미지 미리보기를 보여 주는 R2 List",
+          featuresLabel: "기능",
+          workspaceTitle: "파일 작업 공간",
+          workspaceText: "로컬 폴더 탐색과 검색, 폴더 만들기, 파일 가져오기를 지원합니다. 이름이 겹치면 기존 파일을 덮어쓰지 않고 새 이름을 지정하며, 더블클릭으로 폴더를 열거나 미리 봅니다.",
+          webdavTitle: "WebDAV 위치",
+          webdavText: "WebDAV 서버에 연결해 로컬과 같은 방식으로 원격 폴더를 탐색하고 R2 링크를 만들 수 있습니다.",
+          copyTitle: "한 번의 클릭으로 링크 복사",
+          copyText: "상대 경로로 R2 객체 URL을 만들고 일반 URL, Markdown, HTML 형식으로 복사하며 URL 규칙도 편집할 수 있습니다.",
+          previewTitle: "빠른 미리보기",
+          previewText: "앱을 벗어나지 않고 이미지(PNG, JPEG, GIF, WebP, AVIF, SVG, TIFF), 동영상, PDF, Markdown, 텍스트를 미리 볼 수 있습니다.",
+          themeTitle: "테마와 언어",
+          themeText: "시스템의 라이트/다크 모드를 따르거나 직접 선택할 수 있고, 인터페이스를 6개 언어로 전환할 수 있습니다.",
+          desktopTitle: "네이티브 크로스 플랫폼",
+          desktopText: "Rust와 Slint로 제작되어 Windows, macOS, Linux(x64 및 ARM64)를 지원합니다.",
+          notesTitle: "0.0.4 새로운 기능",
+          notesIntro: "이번 릴리스에서 웹 기반 화면을 Rust + Slint 네이티브 앱으로 교체했습니다.",
+          note1: "사이드바, 도구 모음, 파일 목록, 미리보기 패널, 상태 표시줄을 모두 새로 만든 네이티브 UI.",
+          note2: "WebDAV 위치를 추가해 원격 폴더를 탐색하고 동일한 R2 링크를 만들 수 있습니다.",
+          note3: "이미지(AVIF, SVG, TIFF 추가), 동영상, PDF, Markdown, 텍스트 미리보기를 내장했습니다.",
+          note4: "라이트/다크 테마를 지원하며 시스템 모양을 따를 수 있습니다.",
+          note5: "숨김 및 시스템 파일은 기본적으로 숨기고 설정에서 표시할 수 있습니다.",
+          note6: "클릭으로 선택, 더블클릭으로 열기. 미리보기 패널은 접을 수 있습니다.",
+          note7: "Windows 실행 파일에 앱 아이콘을 포함했습니다. Windows x64, macOS arm64/Intel, Linux x64/ARM64 포터블 빌드를 제공합니다.",
+          downloadTitle: "다운로드",
+          downloadIntro: "포터블 압축 파일 — 압축을 풀고 실행하면 됩니다. 버전 0.0.4.",
+          downloadNote: "Windows 10 이상. macOS 11 이상(Intel 빌드는 10.15 이상). 서명되지 않아 첫 실행 시 마우스 오른쪽 버튼 → 열기가 필요합니다. Linux는 Ubuntu 24.04 이상 / glibc 2.39 이상과 데스크톱 그래픽 라이브러리가 필요합니다.",
+          downloadDocs: "플랫폼 요구 사항과 빌드 방법 보기 →",
           footerText: "R2 List는 URL을 만들고 복사만 하며 Cloudflare R2에 파일을 업로드하거나 동기화하지 않습니다."
         }
       };
