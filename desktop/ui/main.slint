@@ -501,6 +501,7 @@ export component MainWindow inherits Window {
     in-out property <string> connection-label: "LOCAL";
     in-out property <bool> transfer-pending: false;
     in-out property <bool> preferences-ready: false;
+    in-out property <bool> show-hidden: false;
     in-out property <bool> locale-follows-system: false;
     in-out property <string> transfer-name: "";
     in-out property <string> transfer-message: "";
@@ -576,6 +577,7 @@ export component MainWindow inherits Window {
     in-out property <string> text-config-folder: "Configuration folder";
     in-out property <string> text-config-file: "Settings file";
     in-out property <string> text-config-hint: "R2 List saves its settings file in this folder.";
+    in-out property <string> text-show-hidden: "Show hidden and system files";
     in-out property <string> text-choose-folder: "Choose folder";
     in-out property <string> text-reset: "Use default";
     in-out property <string> text-about-updates: "ABOUT & UPDATES";
@@ -608,7 +610,9 @@ export component MainWindow inherits Window {
     in-out property <string> text-local-storage: "Local storage";
 
     property <length> sidebar-width: 228px;
-    property <length> inspector-width: root.inspector-visible ? 316px : 0px;
+    in-out property <float> inspector-progress: 1;
+    animate inspector-progress { duration: 200ms; easing: linear; }
+    property <length> inspector-width: 316px * root.inspector-progress;
     property <length> content-width: max(420px, root.width - root.sidebar-width - root.inspector-width);
     property <length> content-inner-width: max(0px, root.content-width - 62px);
     property <int> thumbnail-columns: max(1, Math.floor((root.content-inner-width + 12px) / 160px));
@@ -692,6 +696,7 @@ export component MainWindow inherits Window {
     callback preview-rules(string, string, string, string);
     callback load-siblings();
     callback save-preferences(string, string);
+    callback show-hidden-changed(bool);
     callback choose-config-directory();
     callback reset-config-directory();
     callback check-updates();
@@ -714,6 +719,10 @@ export component MainWindow inherits Window {
         root.preview-anim = root.preview-expanded ? 1 : 0;
     }
 
+    changed inspector-visible => {
+        root.inspector-progress = root.inspector-visible ? 1 : 0;
+    }
+
 
     FocusScope {
         width: 100%;
@@ -721,6 +730,12 @@ export component MainWindow inherits Window {
 
         KeyBinding {
             keys: @keys(Control + F);
+            activated => { search-field.focus-input(); }
+        }
+
+        // macOS users expect the Command key for search.
+        KeyBinding {
+            keys: @keys(Meta + F);
             activated => { search-field.focus-input(); }
         }
 
@@ -1729,8 +1744,10 @@ export component MainWindow inherits Window {
                     }
                 }
             }
-            if root.inspector-visible: Rectangle {
+            Rectangle {
+                visible: root.inspector-visible || root.inspector-progress > 0;
                 width: root.inspector-width;
+                clip: true;
                 background: root.panel;
 
                 Rectangle {
@@ -2656,6 +2673,41 @@ export component MainWindow inherits Window {
                                             color: root.muted;
                                             font-size: 11px;
                                             wrap: word-wrap;
+                                        }
+                                        Rectangle { height: 10px; background: Colors.transparent; }
+                                        HorizontalLayout {
+                                            height: 24px;
+                                            spacing: 12px;
+                                            Text {
+                                                text: root.text-show-hidden;
+                                                color: root.muted;
+                                                font-size: 12px;
+                                                vertical-alignment: center;
+                                            }
+                                            Rectangle { horizontal-stretch: 1; background: Colors.transparent; }
+                                            Rectangle {
+                                                width: 36px;
+                                                height: 20px;
+                                                border-radius: 10px;
+                                                background: root.show-hidden ? root.accent : root.line-strong;
+                                                Rectangle {
+                                                    x: root.show-hidden ? 18px : 2px;
+                                                    y: 2px;
+                                                    width: 16px;
+                                                    height: 16px;
+                                                    border-radius: 8px;
+                                                    background: root.panel;
+                                                    animate x { duration: 120ms; easing: linear; }
+                                                }
+                                                TouchArea {
+                                                    width: 100%;
+                                                    height: 100%;
+                                                    clicked => {
+                                                        root.show-hidden = !root.show-hidden;
+                                                        root.show-hidden-changed(root.show-hidden);
+                                                    }
+                                                }
+                                            }
                                         }
                                         Rectangle { height: 12px; background: Colors.transparent; }
                                         HorizontalLayout {

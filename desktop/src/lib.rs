@@ -314,6 +314,8 @@ struct UserConfig {
     locale: Option<String>,
     #[serde(default)]
     theme: Option<String>,
+    #[serde(default)]
+    show_hidden: bool,
 }
 
 #[derive(Clone, Serialize)]

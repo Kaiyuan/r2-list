@@ -115,7 +115,9 @@ fn system_locale() -> &'static str {
 fn system_uses_dark_theme() -> bool {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         use std::process::Command;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         if let Ok(output) = Command::new("reg")
             .args([
                 "query",
@@ -123,6 +125,8 @@ fn system_uses_dark_theme() -> bool {
                 "/v",
                 "AppsUseLightTheme",
             ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stderr(std::process::Stdio::null())
             .output()
         {
             let text = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
@@ -136,6 +140,7 @@ fn system_uses_dark_theme() -> bool {
         use std::process::Command;
         if let Ok(output) = Command::new("defaults")
             .args(["read", "-g", "AppleInterfaceStyle"])
+            .stderr(std::process::Stdio::null())
             .output()
         {
             return String::from_utf8_lossy(&output.stdout).trim() == "Dark";
@@ -146,6 +151,7 @@ fn system_uses_dark_theme() -> bool {
         use std::process::Command;
         if let Ok(output) = Command::new("gsettings")
             .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+            .stderr(std::process::Stdio::null())
             .output()
         {
             if String::from_utf8_lossy(&output.stdout).contains("dark") {
@@ -431,7 +437,10 @@ impl AppState {
         self.selected = self
             .entries
             .iter()
-            .find(|entry| entry.kind != "directory")
+            .find(|entry| {
+                entry.kind != "directory"
+                    && (self.config.show_hidden || !is_ignored_entry(&entry.name))
+            })
             .map(|entry| entry.path.clone());
     }
 
@@ -757,7 +766,7 @@ impl AppState {
         }
         let extension = entry.extension.to_ascii_lowercase();
         if matches!(entry.kind.as_str(), "video" | "audio" | "archive" | "file")
-            || matches!(extension.as_str(), "pdf" | "svg" | "avif")
+            || matches!(extension.as_str(), "pdf")
             || (entry.kind == "document" && !matches!(extension.as_str(), "docx" | "pptx" | "xlsx"))
         {
             return Ok(PreviewResult::External);
@@ -809,22 +818,29 @@ impl AppState {
             ));
         }
         if entry.kind == "image" {
-            let dimensions = image::ImageReader::new(Cursor::new(&bytes))
-                .with_guessed_format()
-                .map_err(|error| error.to_string())?
-                .into_dimensions()
-                .map_err(|error| error.to_string())?;
-            if dimensions.0 > 8192 || dimensions.1 > 8192 {
+            if extension == "svg" {
+                let image = Image::load_from_svg_data(&bytes).map_err(|error| error.to_string())?;
+                return Ok(PreviewResult::Image(image));
+            }
+            let rgba = if extension == "avif" {
+                decode_avif_rgba(&bytes).ok_or_else(|| "Could not decode AVIF image".to_string())?
+            } else {
+                let dimensions = image::ImageReader::new(Cursor::new(&bytes))
+                    .with_guessed_format()
+                    .map_err(|error| error.to_string())?
+                    .into_dimensions()
+                    .map_err(|error| error.to_string())?;
+                if dimensions.0 > 8192 || dimensions.1 > 8192 {
+                    return Err("Image preview is limited to 8192 pixels per dimension".into());
+                }
+                image::load_from_memory(&bytes)
+                    .map_err(|error| error.to_string())?
+                    .to_rgba8()
+            };
+            if rgba.width() > 8192 || rgba.height() > 8192 {
                 return Err("Image preview is limited to 8192 pixels per dimension".into());
             }
-            let decoded = image::load_from_memory(&bytes).map_err(|error| error.to_string())?;
-            let rgba = decoded.to_rgba8();
-            let pixels = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-                rgba.as_raw(),
-                rgba.width(),
-                rgba.height(),
-            );
-            return Ok(PreviewResult::Image(Image::from_rgba8(pixels)));
+            return Ok(PreviewResult::Image(rgba_to_slint_image(&rgba)));
         }
         let text = match extension.as_str() {
             "docx" => extract_docx(&bytes)?,
@@ -1127,25 +1143,104 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-fn thumbnail_from_bytes(bytes: &[u8]) -> Option<Image> {
-    let dimensions = image::ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()
-        .ok()?
-        .into_dimensions()
-        .ok()?;
-    if dimensions.0 > 4096 || dimensions.1 > 4096 {
-        return None;
-    }
-    let thumbnail = image::load_from_memory(bytes)
-        .ok()?
-        .thumbnail(320, 180)
-        .to_rgba8();
+fn rgba_to_slint_image(image: &image::RgbaImage) -> Image {
     let pixels = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-        thumbnail.as_raw(),
-        thumbnail.width(),
-        thumbnail.height(),
+        image.as_raw(),
+        image.width(),
+        image.height(),
     );
-    Some(Image::from_rgba8(pixels))
+    Image::from_rgba8(pixels)
+}
+
+fn decode_avif_rgba(bytes: &[u8]) -> Option<image::RgbaImage> {
+    use avif_decode::Image as AvifImage;
+    let decoded = avif_decode::Decoder::from_avif(bytes).ok()?.to_image().ok()?;
+    let (width, height, data): (u32, u32, Vec<u8>) = match decoded {
+        AvifImage::Rgba8(image) => {
+            let mut data = Vec::with_capacity(image.width() * image.height() * 4);
+            for pixel in image.buf() {
+                data.extend_from_slice(&[pixel.r, pixel.g, pixel.b, pixel.a]);
+            }
+            (image.width() as u32, image.height() as u32, data)
+        }
+        AvifImage::Rgb8(image) => {
+            let mut data = Vec::with_capacity(image.width() * image.height() * 4);
+            for pixel in image.buf() {
+                data.extend_from_slice(&[pixel.r, pixel.g, pixel.b, 255]);
+            }
+            (image.width() as u32, image.height() as u32, data)
+        }
+        AvifImage::Gray8(image) => {
+            let mut data = Vec::with_capacity(image.width() * image.height() * 4);
+            for pixel in image.buf() {
+                let value = pixel.value();
+                data.extend_from_slice(&[value, value, value, 255]);
+            }
+            (image.width() as u32, image.height() as u32, data)
+        }
+        AvifImage::Rgba16(image) => {
+            let mut data = Vec::with_capacity(image.width() * image.height() * 4);
+            for pixel in image.buf() {
+                data.extend_from_slice(&[
+                    (pixel.r >> 8) as u8,
+                    (pixel.g >> 8) as u8,
+                    (pixel.b >> 8) as u8,
+                    (pixel.a >> 8) as u8,
+                ]);
+            }
+            (image.width() as u32, image.height() as u32, data)
+        }
+        AvifImage::Rgb16(image) => {
+            let mut data = Vec::with_capacity(image.width() * image.height() * 4);
+            for pixel in image.buf() {
+                data.extend_from_slice(&[
+                    (pixel.r >> 8) as u8,
+                    (pixel.g >> 8) as u8,
+                    (pixel.b >> 8) as u8,
+                    255,
+                ]);
+            }
+            (image.width() as u32, image.height() as u32, data)
+        }
+        AvifImage::Gray16(image) => {
+            let mut data = Vec::with_capacity(image.width() * image.height() * 4);
+            for pixel in image.buf() {
+                let value = (pixel.value() >> 8) as u8;
+                data.extend_from_slice(&[value, value, value, 255]);
+            }
+            (image.width() as u32, image.height() as u32, data)
+        }
+    };
+    image::RgbaImage::from_raw(width, height, data)
+}
+
+fn thumbnail_from_bytes(bytes: &[u8], extension: &str) -> Option<Image> {
+    if extension.eq_ignore_ascii_case("svg") {
+        return Image::load_from_svg_data(bytes).ok();
+    }
+    let thumbnail = if extension.eq_ignore_ascii_case("avif") {
+        let decoded = decode_avif_rgba(bytes)?;
+        if decoded.width() > 4096 || decoded.height() > 4096 {
+            return None;
+        }
+        image::DynamicImage::ImageRgba8(decoded)
+            .thumbnail(160, 90)
+            .to_rgba8()
+    } else {
+        let dimensions = image::ImageReader::new(Cursor::new(bytes))
+            .with_guessed_format()
+            .ok()?
+            .into_dimensions()
+            .ok()?;
+        if dimensions.0 > 4096 || dimensions.1 > 4096 {
+            return None;
+        }
+        image::load_from_memory(bytes)
+            .ok()?
+            .thumbnail(160, 90)
+            .to_rgba8()
+    };
+    Some(rgba_to_slint_image(&thumbnail))
 }
 
 fn local_thumbnail(state: &AppState, entry: &DirectoryEntry) -> Option<Image> {
@@ -1154,7 +1249,7 @@ fn local_thumbnail(state: &AppState, entry: &DirectoryEntry) -> Option<Image> {
     }
     let path = resolve_path(state.root.as_ref()?, &entry.path).ok()?;
     let bytes = fs::read(path).ok()?;
-    thumbnail_from_bytes(&bytes)
+    thumbnail_from_bytes(&bytes, &entry.extension)
 }
 
 fn remote_thumbnail(state: &AppState, entry: &DirectoryEntry) -> Option<Image> {
@@ -1168,7 +1263,7 @@ fn remote_thumbnail(state: &AppState, entry: &DirectoryEntry) -> Option<Image> {
         .build()
         .ok()?;
     let bytes = runtime.block_on(client.read_file(&path)).ok()?;
-    thumbnail_from_bytes(&bytes)
+    thumbnail_from_bytes(&bytes, &entry.extension)
 }
 
 fn cached_thumbnail(state: &AppState, entry: &DirectoryEntry) -> Option<Image> {
@@ -1186,12 +1281,32 @@ fn cached_thumbnail(state: &AppState, entry: &DirectoryEntry) -> Option<Image> {
     };
     THUMBNAIL_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if cache.len() > 600 {
+        if cache.len() > 300 {
             cache.clear();
         }
         cache.insert(key, thumbnail.clone());
     });
     thumbnail
+}
+
+fn is_ignored_entry(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    name.starts_with('.')
+        || matches!(
+            lower.as_str(),
+            "desktop.ini"
+                | "thumbs.db"
+                | "ehthumbs.db"
+                | "ntuser.dat"
+                | "ntuser.ini"
+                | "pagefile.sys"
+                | "hiberfil.sys"
+                | "swapfile.sys"
+                | "dumpstack.log.tmp"
+                | "$recycle.bin"
+                | "system volume information"
+                | "lost+found"
+        )
 }
 
 fn visible_entries(
@@ -1208,7 +1323,10 @@ fn visible_entries(
     let mut entries: Vec<_> = state
         .entries
         .iter()
-        .filter(|entry| entry.name.to_lowercase().contains(&search.to_lowercase()))
+        .filter(|entry| {
+            entry.name.to_lowercase().contains(&search.to_lowercase())
+                && (state.config.show_hidden || !is_ignored_entry(&entry.name))
+        })
         .collect();
     entries.sort_by(|left, right| {
         let directory_order = (right.kind == "directory").cmp(&(left.kind == "directory"));
@@ -1222,7 +1340,7 @@ fn visible_entries(
             name_order.reverse()
         }
     });
-    let mut thumbnail_budget = 48;
+    let mut thumbnail_budget = 32;
     entries
         .into_iter()
         .map(|entry| {
@@ -1860,6 +1978,7 @@ fn translate(locale: &str, english: &'static str) -> &'static str {
             "R2 List saves its settings file in this folder." => {
                 "R2 List 会将设置文件保存在此文件夹中。"
             }
+            "Show hidden and system files" => "显示隐藏文件和系统文件",
             "Use default" => "使用默认",
             "Not checked" => "未检查",
             "Checking…" => "检查中…",
@@ -1986,6 +2105,7 @@ fn translate(locale: &str, english: &'static str) -> &'static str {
             "R2 List saves its settings file in this folder." => {
                 "R2 List 會將設定檔儲存在此資料夾中。"
             }
+            "Show hidden and system files" => "顯示隱藏檔案和系統檔案",
             "Use default" => "使用預設",
             "Not checked" => "未檢查",
             "Checking…" => "檢查中…",
@@ -2114,6 +2234,7 @@ fn translate(locale: &str, english: &'static str) -> &'static str {
             "R2 List saves its settings file in this folder." => {
                 "R2 List は設定ファイルをこのフォルダーに保存します。"
             }
+            "Show hidden and system files" => "隠しファイルとシステムファイルを表示",
             "Use default" => "既定を使用",
             "Not checked" => "未確認",
             "Checking…" => "確認中…",
@@ -2244,6 +2365,7 @@ fn translate(locale: &str, english: &'static str) -> &'static str {
             "R2 List saves its settings file in this folder." => {
                 "R2 List는 이 폴더에 설정 파일을 저장합니다."
             }
+            "Show hidden and system files" => "숨김 및 시스템 파일 표시",
             "Use default" => "기본값 사용",
             "Not checked" => "확인 안 함",
             "Checking…" => "확인 중…",
@@ -2374,6 +2496,7 @@ fn translate(locale: &str, english: &'static str) -> &'static str {
             "R2 List saves its settings file in this folder." => {
                 "R2 List enregistre son fichier de configuration dans ce dossier."
             }
+            "Show hidden and system files" => "Afficher les fichiers cachés et système",
             "Use default" => "Utiliser par défaut",
             "Not checked" => "Non vérifié",
             "Checking…" => "Vérification…",
@@ -2493,6 +2616,7 @@ fn apply_locale(window: &MainWindow, locale: &str) {
     window.set_text_config_hint(
         t("R2 List saves its settings file in this folder.").into(),
     );
+    window.set_text_show_hidden(t("Show hidden and system files").into());
     window.set_text_choose_folder(t("Choose folder").into());
     window.set_text_reset(t("Use default").into());
     window.set_text_about_updates(t("ABOUT & UPDATES").into());
@@ -2722,46 +2846,7 @@ pub fn run() {
     }));
 
     {
-        let mut state = state.borrow_mut();
-        let active = if config_load_failed {
-            None
-        } else {
-            state
-                .config
-                .active_directory
-                .clone()
-                .or_else(default_directory)
-        };
-        if let Some(path) = active {
-            let saved = state
-                .config
-                .directories
-                .iter()
-                .find(|directory| directory.path == path)
-                .cloned();
-            let result =
-                if let Some(directory) = saved.filter(|directory| directory.kind == "webdav") {
-                    window.set_webdav_endpoint(directory.endpoint.clone().into());
-                    window.set_webdav_username(directory.username.clone().into());
-                    window.set_webdav_password(directory.password.clone().into());
-                    state.connect_remote(
-                        &directory.endpoint,
-                        &directory.username,
-                        &directory.password,
-                    )
-                } else {
-                    state.open_directory(&path)
-                };
-            if let Err(error) = result {
-                state.root = None;
-                state.remote = None;
-                window
-                    .set_status(format!("Could not restore the previous location: {error}").into());
-            } else {
-                window.set_status("Location loaded".into());
-            }
-        }
-        update_location_settings(&window, &state);
+        let state = state.borrow();
         let locale = state
             .config
             .locale
@@ -2781,6 +2866,7 @@ pub fn run() {
         window.set_system_dark(system_uses_dark_theme());
         window.set_theme_preference(theme_name(theme, &locale).into());
         window.set_theme_mode(theme.into());
+        window.set_show_hidden(state.config.show_hidden);
         window.set_preferences_ready(true);
         match super::config_location() {
             Ok(location) => {
@@ -3075,8 +3161,6 @@ pub fn run() {
             let mut state = state.borrow_mut();
             state.selected = Some(path.to_string());
             if let Some(window) = weak.upgrade() {
-                window.set_preview_text(SharedString::default());
-                window.set_preview_image_visible(false);
                 update_window(&window, &state);
             }
         });
@@ -3520,6 +3604,24 @@ pub fn run() {
     {
         let state = state.clone();
         let weak = window.as_weak();
+        window.on_show_hidden_changed(move |value| {
+            let mut state = state.borrow_mut();
+            state.config.show_hidden = value;
+            if let Err(error) = save_user_config(state.config.clone()) {
+                if let Some(window) = weak.upgrade() {
+                    show_error(&window, error);
+                }
+                return;
+            }
+            if let Some(window) = weak.upgrade() {
+                update_window(&window, &state);
+            }
+        });
+    }
+
+    {
+        let state = state.clone();
+        let weak = window.as_weak();
         window.on_choose_config_directory(move || {
             let Some(path) = FileDialog::new().pick_folder() else {
                 return;
@@ -3555,6 +3657,58 @@ pub fn run() {
                     Err(error) => show_error(&window, error),
                 }
             }
+        });
+    }
+
+    {
+        let state = state.clone();
+        let weak = window.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(30), move || {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+            let mut state = state.borrow_mut();
+            let active = if state.config_load_failed {
+                None
+            } else {
+                state
+                    .config
+                    .active_directory
+                    .clone()
+                    .or_else(default_directory)
+            };
+            if let Some(path) = active {
+                let saved = state
+                    .config
+                    .directories
+                    .iter()
+                    .find(|directory| directory.path == path)
+                    .cloned();
+                let result =
+                    if let Some(directory) = saved.filter(|directory| directory.kind == "webdav") {
+                        window.set_webdav_endpoint(directory.endpoint.clone().into());
+                        window.set_webdav_username(directory.username.clone().into());
+                        window.set_webdav_password(directory.password.clone().into());
+                        state.connect_remote(
+                            &directory.endpoint,
+                            &directory.username,
+                            &directory.password,
+                        )
+                    } else {
+                        state.open_directory(&path)
+                    };
+                if let Err(error) = result {
+                    state.root = None;
+                    state.remote = None;
+                    window.set_status(
+                        format!("Could not restore the previous location: {error}").into(),
+                    );
+                } else {
+                    window.set_status("Location loaded".into());
+                }
+            }
+            update_location_settings(&window, &state);
+            update_window(&window, &state);
         });
     }
 

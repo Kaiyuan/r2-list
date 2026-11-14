@@ -11,6 +11,28 @@ foreach ($tool in @("cargo")) {
 if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
     throw "This script currently builds Windows x64 only (found $env:PROCESSOR_ARCHITECTURE)."
 }
+if (-not (Get-Command nasm -ErrorAction SilentlyContinue)) {
+    $nasmRoot = Join-Path $env:LOCALAPPDATA "r2-list-tools\nasm"
+    $nasmExe = Join-Path $nasmRoot "nasm.exe"
+    if (-not (Test-Path -LiteralPath $nasmExe)) {
+        Write-Host "NASM not found; downloading the portable assembler required by the AVIF decoder..."
+        $zip = Join-Path $env:TEMP ("nasm-" + [guid]::NewGuid().ToString("N") + ".zip")
+        $extract = Join-Path $env:TEMP ("nasm-" + [guid]::NewGuid().ToString("N"))
+        try {
+            Invoke-WebRequest -Uri "https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip" -OutFile $zip
+            Expand-Archive -Path $zip -DestinationPath $extract -Force
+            $package = Get-ChildItem -LiteralPath $extract -Directory | Select-Object -First 1
+            if (-not $package) { throw "The NASM archive did not contain a directory." }
+            New-Item -ItemType Directory -Force -Path $nasmRoot | Out-Null
+            Copy-Item -LiteralPath (Join-Path $package.FullName "nasm.exe") -Destination $nasmRoot -Force
+        }
+        finally {
+            Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    $env:PATH = "$nasmRoot;$env:PATH"
+}
 
 cargo build --manifest-path desktop\Cargo.toml --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

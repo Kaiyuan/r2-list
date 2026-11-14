@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           xcode-select --install || true
-          brew install pkg-config
+          brew install pkg-config nasm
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -52,7 +52,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential curl pkg-config zip \
+            build-essential curl pkg-config zip nasm \
             libssl-dev \
             libfontconfig1-dev libfreetype6-dev \
             libxkbcommon-dev libxkbcommon-x11-dev \

@@ -34,6 +34,11 @@ fi
 for tool in cargo zip; do
   command -v "$tool" >/dev/null 2>&1 || { echo "Missing prerequisite: $tool" >&2; exit 1; }
 done
+if [[ "$rust_target" == "x86_64-unknown-linux-gnu" ]] && ! command -v nasm >/dev/null 2>&1; then
+  echo "Missing prerequisite: nasm (required to build the AVIF decoder on x86/x64)." >&2
+  echo "Install it with: sudo apt-get install nasm   (or your distribution's package manager)" >&2
+  exit 1
+fi
 
 repository_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repository_root"

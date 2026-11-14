@@ -8,9 +8,11 @@ Slint 原生界面支持浏览和搜索文件、导入文件、新建文件夹�
 
 ## 开发环境
 
-- Rust stable 工具链
+- Rust 1.98 或更新的 stable 工具链
+- NASM（仅 x86/x64 目标需要，用于编译 AVIF 解码器；Windows 构建脚本会自动下载，Intel Mac 用 `brew install nasm`，Ubuntu x64 用 `apt install nasm`）
 - Windows：Visual Studio C++ Build Tools
-- Linux：Slint 所需的图形/字体开发库
+- macOS：Xcode Command Line Tools
+- Linux：Slint 所需的图形/字体开发库（完整依赖列表见 `docs/portable-releases.md`）
 
 ## 启动
 
