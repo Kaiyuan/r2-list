@@ -180,15 +180,32 @@
         line-height: 1.7;
       }
 
-      .notes {
-        padding: 8px 0 24px;
+      .downloads {
+        padding: 8px 0 72px;
       }
 
       .section-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         margin: 0 0 10px;
         font-size: clamp(24px, 3.4vw, 34px);
         letter-spacing: -0.035em;
         line-height: 1.15;
+      }
+
+      .version-chip {
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: #eef0fb;
+        color: #474f7a;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .version-chip[hidden] {
+        display: none;
       }
 
       .section-intro {
@@ -197,26 +214,6 @@
         color: #53625a;
         font-size: 15px;
         line-height: 1.75;
-      }
-
-      .notes ul {
-        margin: 18px 0 0;
-        padding-left: 22px;
-        color: #3f4c44;
-        font-size: 15px;
-        line-height: 1.85;
-      }
-
-      .notes li {
-        margin: 0 0 6px;
-      }
-
-      .notes li::marker {
-        color: #282f6c;
-      }
-
-      .downloads {
-        padding: 8px 0 72px;
       }
 
       .download-grid {
@@ -240,9 +237,31 @@
         color: inherit;
       }
 
-      a.download-item:hover {
+      .download-item:hover {
         border-color: #c3ccd9;
         background: #fff;
+      }
+
+      .download-item.is-recommended {
+        border-color: #282f6c;
+        box-shadow: 0 0 0 1px #282f6c inset;
+        background: #fff;
+      }
+
+      .download-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .badge {
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #282f6c;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
       }
 
       .download-item code {
@@ -307,6 +326,11 @@
           grid-template-columns: 1fr;
         }
 
+        .download-item {
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
         .download-item code {
           font-size: 11px;
         }
@@ -345,6 +369,7 @@
           <div class="actions">
             <a
               class="button button-primary"
+              id="download-primary"
               href="https://github.com/Kaiyuan/r2-list/releases/latest"
               data-i18n="latestRelease"
             >下载最新版本</a>
@@ -356,8 +381,8 @@
           <img
             src="./images/r2list-windows.png"
             alt="R2 List 桌面界面：WebDAV 目录与图片预览"
-            width="1340"
-            height="900"
+            width="1282"
+            height="852"
             data-i18n-attr="alt:screenshotAlt"
           />
         </figure>
@@ -389,44 +414,52 @@
           </article>
         </section>
 
-        <section class="notes">
-          <div class="eyebrow">v0.0.4</div>
-          <h2 class="section-title" data-i18n="notesTitle">0.0.4 更新内容</h2>
-          <p class="section-intro" data-i18n="notesIntro">本次发布用 Rust + Slint 原生应用替换了原来的网页界面。</p>
-          <ul>
-            <li data-i18n="note1">全新原生界面：侧栏、工具栏、文件列表、预览面板与状态栏全部重写。</li>
-            <li data-i18n="note2">新增 WebDAV 位置，可浏览远程目录并生成同样的 R2 链接。</li>
-            <li data-i18n="note3">内置预览面板，支持图片（新增 AVIF、SVG、TIFF）、视频、PDF、Markdown 与文本。</li>
-            <li data-i18n="note4">支持浅色/深色主题，可选择跟随系统外观。</li>
-            <li data-i18n="note5">默认过滤隐藏文件和系统文件，可在设置中开启显示。</li>
-            <li data-i18n="note6">单击选中、双击打开；预览面板可收起，工具栏与面包屑交互优化。</li>
-            <li data-i18n="note7">Windows 可执行文件内嵌应用图标；提供 Windows x64、macOS arm64/Intel、Linux x64/ARM64 免安装包。</li>
-          </ul>
-        </section>
-
         <section class="downloads">
-          <h2 class="section-title" data-i18n="downloadTitle">下载</h2>
-          <p class="section-intro" data-i18n="downloadIntro">免安装压缩包，解压即用。当前版本 0.0.4。</p>
+          <h2 class="section-title">
+            <span data-i18n="downloadTitle">下载</span>
+            <span class="version-chip" id="release-tag" hidden></span>
+          </h2>
+          <p class="section-intro" data-i18n="downloadIntro">免安装压缩包，解压即用。</p>
           <div class="download-grid">
-            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-windows-x64-v0.0.4.zip">
-              <span>Windows x64</span>
-              <code>r2-list-windows-x64-v0.0.4.zip</code>
+            <a
+              class="download-item"
+              data-asset="windows-x64"
+              href="https://github.com/Kaiyuan/r2-list/releases/latest"
+            >
+              <span class="download-label"><span>Windows x64</span></span>
+              <code>r2-list-windows-x64.zip</code>
             </a>
-            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-macos-arm64-v0.0.4.zip">
-              <span>macOS Apple Silicon</span>
-              <code>r2-list-macos-arm64-v0.0.4.zip</code>
+            <a
+              class="download-item"
+              data-asset="macos-arm64"
+              href="https://github.com/Kaiyuan/r2-list/releases/latest"
+            >
+              <span class="download-label"><span>macOS Apple Silicon</span></span>
+              <code>r2-list-macos-arm64.zip</code>
             </a>
-            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-macos-x64-10.15-v0.0.4.zip">
-              <span>macOS Intel</span>
-              <code>r2-list-macos-x64-10.15-v0.0.4.zip</code>
+            <a
+              class="download-item"
+              data-asset="macos-x64"
+              href="https://github.com/Kaiyuan/r2-list/releases/latest"
+            >
+              <span class="download-label"><span>macOS Intel</span></span>
+              <code>r2-list-macos-x64.zip</code>
             </a>
-            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-linux-x64-v0.0.4.zip">
-              <span>Linux x64</span>
-              <code>r2-list-linux-x64-v0.0.4.zip</code>
+            <a
+              class="download-item"
+              data-asset="linux-x64"
+              href="https://github.com/Kaiyuan/r2-list/releases/latest"
+            >
+              <span class="download-label"><span>Linux x64</span></span>
+              <code>r2-list-linux-x64.zip</code>
             </a>
-            <a class="download-item" href="https://github.com/Kaiyuan/r2-list/releases/download/v0.0.4/r2-list-linux-arm64-v0.0.4.zip">
-              <span>Linux ARM64</span>
-              <code>r2-list-linux-arm64-v0.0.4.zip</code>
+            <a
+              class="download-item"
+              data-asset="linux-arm64"
+              href="https://github.com/Kaiyuan/r2-list/releases/latest"
+            >
+              <span class="download-label"><span>Linux ARM64</span></span>
+              <code>r2-list-linux-arm64.zip</code>
             </a>
           </div>
           <p class="download-note" data-i18n="downloadNote">Windows 10 及以上；macOS 11 及以上（Intel 版支持 10.15+），未签名版本首次启动需右键「打开」；Linux 需 Ubuntu 24.04+ / glibc 2.39+ 及桌面图形库。</p>
@@ -463,19 +496,11 @@
           themeText: "Follow the system light or dark appearance, and switch the interface between six languages.",
           desktopTitle: "Native and cross-platform",
           desktopText: "Built with Rust and Slint for Windows, macOS, and Linux (x64 and ARM64).",
-          notesTitle: "What's new in 0.0.4",
-          notesIntro: "This release replaces the web-based interface with a native Rust and Slint application.",
-          note1: "A completely rebuilt native interface: sidebar, toolbar, file list, preview pane, and status bar.",
-          note2: "New WebDAV locations: browse remote folders and generate the same R2 links.",
-          note3: "Built-in preview for images (including AVIF, SVG, and TIFF), video, PDF, Markdown, and text.",
-          note4: "Light and dark themes, optionally following the system appearance.",
-          note5: "Hidden and system files are filtered by default and can be shown from Settings.",
-          note6: "Single-click selects, double-click opens; the preview pane can be collapsed.",
-          note7: "The Windows executable embeds the application icon; portable builds ship for Windows x64, macOS arm64/Intel, and Linux x64/ARM64.",
           downloadTitle: "Downloads",
-          downloadIntro: "Portable archives — unpack and run. Version 0.0.4.",
+          downloadIntro: "Portable archives — unpack and run.",
           downloadNote: "Windows 10 or later. macOS 11 or later (10.15 for the Intel build); unsigned builds need a right-click → Open on first launch. Linux needs Ubuntu 24.04+ / glibc 2.39+ with desktop graphics libraries.",
           downloadDocs: "Platform requirements and build instructions →",
+          recommended: "Recommended",
           footerText: "R2 List creates and copies URLs; it does not upload or sync files to Cloudflare R2."
         },
         fr: {
@@ -497,19 +522,11 @@
           themeText: "Suivez l’apparence claire ou sombre du système et changez la langue de l’interface parmi six langues.",
           desktopTitle: "Natif et multiplateforme",
           desktopText: "Conçu avec Rust et Slint pour Windows, macOS et Linux (x64 et ARM64).",
-          notesTitle: "Nouveautés de la version 0.0.4",
-          notesIntro: "Cette version remplace l’interface web par une application native Rust et Slint.",
-          note1: "Interface native entièrement reconstruite : barre latérale, barre d’outils, liste de fichiers, volet d’aperçu et barre d’état.",
-          note2: "Nouveaux emplacements WebDAV : parcourez les dossiers distants et générez les mêmes liens R2.",
-          note3: "Aperçu intégré des images (dont AVIF, SVG et TIFF), vidéos, PDF, Markdown et texte.",
-          note4: "Thèmes clair et sombre, avec suivi facultatif de l’apparence du système.",
-          note5: "Les fichiers cachés et système sont masqués par défaut et peuvent être affichés dans les réglages.",
-          note6: "Un clic sélectionne, un double-clic ouvre ; le volet d’aperçu peut être replié.",
-          note7: "L’exécutable Windows intègre l’icône de l’application ; des versions portables sont fournies pour Windows x64, macOS arm64/Intel et Linux x64/ARM64.",
           downloadTitle: "Téléchargements",
-          downloadIntro: "Archives portables — décompressez et lancez. Version 0.0.4.",
+          downloadIntro: "Archives portables — décompressez et lancez.",
           downloadNote: "Windows 10 ou ultérieur. macOS 11 ou ultérieur (10.15 pour la version Intel) ; les versions non signées nécessitent un clic droit → Ouvrir au premier lancement. Linux nécessite Ubuntu 24.04+ / glibc 2.39+ avec les bibliothèques graphiques de bureau.",
           downloadDocs: "Configuration requise et compilation →",
+          recommended: "Recommandé",
           footerText: "R2 List crée et copie des URL ; il ne téléverse ni ne synchronise de fichiers vers Cloudflare R2."
         },
         "zh-CN": {
@@ -531,19 +548,11 @@
           themeText: "浅色/深色主题可跟随系统，界面支持六种语言切换。",
           desktopTitle: "原生跨平台",
           desktopText: "使用 Rust 和 Slint 构建，支持 Windows、macOS 和 Linux（x64 与 ARM64）。",
-          notesTitle: "0.0.4 更新内容",
-          notesIntro: "本次发布用 Rust + Slint 原生应用替换了原来的网页界面。",
-          note1: "全新原生界面：侧栏、工具栏、文件列表、预览面板与状态栏全部重写。",
-          note2: "新增 WebDAV 位置，可浏览远程目录并生成同样的 R2 链接。",
-          note3: "内置预览面板，支持图片（新增 AVIF、SVG、TIFF）、视频、PDF、Markdown 与文本。",
-          note4: "支持浅色/深色主题，可选择跟随系统外观。",
-          note5: "默认过滤隐藏文件和系统文件，可在设置中开启显示。",
-          note6: "单击选中、双击打开；预览面板可收起，工具栏与面包屑交互优化。",
-          note7: "Windows 可执行文件内嵌应用图标；提供 Windows x64、macOS arm64/Intel、Linux x64/ARM64 免安装包。",
           downloadTitle: "下载",
-          downloadIntro: "免安装压缩包，解压即用。当前版本 0.0.4。",
+          downloadIntro: "免安装压缩包，解压即用。",
           downloadNote: "Windows 10 及以上；macOS 11 及以上（Intel 版支持 10.15+），未签名版本首次启动需右键「打开」；Linux 需 Ubuntu 24.04+ / glibc 2.39+ 及桌面图形库。",
           downloadDocs: "查看平台要求与构建说明 →",
+          recommended: "推荐",
           footerText: "R2 List 只生成和复制 URL，不会上传或同步文件到 Cloudflare R2。"
         },
         "zh-TW": {
@@ -565,19 +574,11 @@
           themeText: "淺色/深色主題可跟隨系統，介面支援六種語言切換。",
           desktopTitle: "原生跨平台",
           desktopText: "以 Rust 和 Slint 建置，支援 Windows、macOS 和 Linux（x64 與 ARM64）。",
-          notesTitle: "0.0.4 更新內容",
-          notesIntro: "本次發佈以 Rust + Slint 原生應用程式取代原本的網頁介面。",
-          note1: "全新原生介面：側欄、工具列、檔案清單、預覽面板與狀態列全部重寫。",
-          note2: "新增 WebDAV 位置，可瀏覽遠端目錄並產生相同的 R2 連結。",
-          note3: "內建預覽面板，支援圖片（新增 AVIF、SVG、TIFF）、影片、PDF、Markdown 與文字。",
-          note4: "支援淺色/深色主題，可選擇跟隨系統外觀。",
-          note5: "預設過濾隱藏檔案與系統檔案，可在設定中開啟顯示。",
-          note6: "按一下選取、按兩下開啟；預覽面板可收合，工具列與麵包屑互動最佳化。",
-          note7: "Windows 執行檔內嵌應用程式圖示；提供 Windows x64、macOS arm64/Intel、Linux x64/ARM64 免安裝包。",
           downloadTitle: "下載",
-          downloadIntro: "免安裝壓縮檔，解壓即用。目前版本 0.0.4。",
+          downloadIntro: "免安裝壓縮檔，解壓即用。",
           downloadNote: "Windows 10 以上；macOS 11 以上（Intel 版支援 10.15+），未簽署版本首次啟動需按右鍵「打開」；Linux 需 Ubuntu 24.04+ / glibc 2.39+ 及桌面圖形函式庫。",
           downloadDocs: "查看平台需求與建置說明 →",
+          recommended: "推薦",
           footerText: "R2 List 僅產生及複製 URL，不會上傳或同步檔案至 Cloudflare R2。"
         },
         ja: {
@@ -599,19 +600,11 @@
           themeText: "システムのライト/ダーク表示に追従でき、6 言語でインターフェースを切り替えられます。",
           desktopTitle: "ネイティブでクロスプラットフォーム",
           desktopText: "Rust と Slint で構築し、Windows、macOS、Linux（x64 / ARM64）に対応しています。",
-          notesTitle: "0.0.4 の新機能",
-          notesIntro: "今回のリリースで、Web ベースの画面を Rust + Slint のネイティブアプリに置き換えました。",
-          note1: "サイドバー、ツールバー、ファイル一覧、プレビュー、ステータスバーを全面的に作り直したネイティブ UI。",
-          note2: "WebDAV の場所を追加し、リモートフォルダーを閲覧して同じ R2 リンクを生成できます。",
-          note3: "画像（AVIF、SVG、TIFF を追加）、動画、PDF、Markdown、テキストのプレビューを内蔵。",
-          note4: "ライト/ダークテーマに対応し、システムの外観に追従できます。",
-          note5: "隠しファイルとシステムファイルは既定で非表示、設定から表示できます。",
-          note6: "シングルクリックで選択、ダブルクリックで開く。プレビューは折りたためます。",
-          note7: "Windows 実行ファイルにアプリアイコンを埋め込み。Windows x64、macOS arm64/Intel、Linux x64/ARM64 のポータブル版を提供。",
           downloadTitle: "ダウンロード",
-          downloadIntro: "ポータブルアーカイブ — 解凍して実行するだけ。バージョン 0.0.4。",
+          downloadIntro: "ポータブルアーカイブ — 解凍して実行するだけ。",
           downloadNote: "Windows 10 以降。macOS 11 以降（Intel 版は 10.15 以降）。未署名のため初回起動時は右クリック →「開く」が必要です。Linux は Ubuntu 24.04 以降 / glibc 2.39 以降とデスクトップ用グラフィックライブラリが必要です。",
           downloadDocs: "動作要件とビルド手順を見る →",
+          recommended: "おすすめ",
           footerText: "R2 List は URL の作成とコピーのみを行い、Cloudflare R2 へのファイルのアップロードや同期は行いません。"
         },
         ko: {
@@ -633,21 +626,23 @@
           themeText: "시스템의 라이트/다크 모드를 따르거나 직접 선택할 수 있고, 인터페이스를 6개 언어로 전환할 수 있습니다.",
           desktopTitle: "네이티브 크로스 플랫폼",
           desktopText: "Rust와 Slint로 제작되어 Windows, macOS, Linux(x64 및 ARM64)를 지원합니다.",
-          notesTitle: "0.0.4 새로운 기능",
-          notesIntro: "이번 릴리스에서 웹 기반 화면을 Rust + Slint 네이티브 앱으로 교체했습니다.",
-          note1: "사이드바, 도구 모음, 파일 목록, 미리보기 패널, 상태 표시줄을 모두 새로 만든 네이티브 UI.",
-          note2: "WebDAV 위치를 추가해 원격 폴더를 탐색하고 동일한 R2 링크를 만들 수 있습니다.",
-          note3: "이미지(AVIF, SVG, TIFF 추가), 동영상, PDF, Markdown, 텍스트 미리보기를 내장했습니다.",
-          note4: "라이트/다크 테마를 지원하며 시스템 모양을 따를 수 있습니다.",
-          note5: "숨김 및 시스템 파일은 기본적으로 숨기고 설정에서 표시할 수 있습니다.",
-          note6: "클릭으로 선택, 더블클릭으로 열기. 미리보기 패널은 접을 수 있습니다.",
-          note7: "Windows 실행 파일에 앱 아이콘을 포함했습니다. Windows x64, macOS arm64/Intel, Linux x64/ARM64 포터블 빌드를 제공합니다.",
           downloadTitle: "다운로드",
-          downloadIntro: "포터블 압축 파일 — 압축을 풀고 실행하면 됩니다. 버전 0.0.4.",
+          downloadIntro: "포터블 압축 파일 — 압축을 풀고 실행하면 됩니다.",
           downloadNote: "Windows 10 이상. macOS 11 이상(Intel 빌드는 10.15 이상). 서명되지 않아 첫 실행 시 마우스 오른쪽 버튼 → 열기가 필요합니다. Linux는 Ubuntu 24.04 이상 / glibc 2.39 이상과 데스크톱 그래픽 라이브러리가 필요합니다.",
           downloadDocs: "플랫폼 요구 사항과 빌드 방법 보기 →",
+          recommended: "추천",
           footerText: "R2 List는 URL을 만들고 복사만 하며 Cloudflare R2에 파일을 업로드하거나 동기화하지 않습니다."
         }
+      };
+
+      const repository = "Kaiyuan/r2-list";
+      const fallbackReleaseUrl = `https://github.com/${repository}/releases/latest`;
+      const assetMatchers = {
+        "windows-x64": (name) => name.includes("windows"),
+        "macos-arm64": (name) => name.includes("macos") && name.includes("arm64"),
+        "macos-x64": (name) => name.includes("macos") && name.includes("x64"),
+        "linux-x64": (name) => name.includes("linux") && name.includes("x64"),
+        "linux-arm64": (name) => name.includes("linux") && name.includes("arm64")
       };
 
       const supportedLanguages = Object.keys(translations);
@@ -657,9 +652,68 @@
         ? (/(tw|hk|mo|hant)/i.test(navigator.languages.find((language) => language.toLowerCase().startsWith("zh"))) ? "zh-TW" : "zh-CN")
         : supportedLanguages.find((language) => navigator.language.toLowerCase().startsWith(language.toLowerCase())) || "en";
 
+      let currentLanguage = "en";
+      let recommendedPlatform = null;
+
+      function isAppleSilicon() {
+        try {
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+          if (!context) return true;
+          const info = context.getExtension("WEBGL_debug_renderer_info");
+          const renderer = info ? String(context.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+          if (/apple\s?m\d|apple\s?gpu/i.test(renderer)) return true;
+          if (/intel|amd|radeon|nvidia/i.test(renderer)) return false;
+        } catch (error) {
+          // Ignore blocked WebGL contexts and fall back to the default below.
+        }
+        // Safari reports "Intel Mac OS X" on Apple Silicon too, so prefer arm64 when unknown.
+        return true;
+      }
+
+      function detectPlatform() {
+        const userAgent = (navigator.userAgent || "").toLowerCase();
+        const platform = String(navigator.userAgentData?.platform || navigator.platform || "").toLowerCase();
+        if (userAgent.includes("windows") || platform.includes("win")) return "windows-x64";
+        if (userAgent.includes("mac os") || platform.includes("mac")) {
+          return isAppleSilicon() ? "macos-arm64" : "macos-x64";
+        }
+        if (userAgent.includes("linux") || platform.includes("linux") || userAgent.includes("x11")) {
+          return /aarch64|arm64|armv8/.test(userAgent) ? "linux-arm64" : "linux-x64";
+        }
+        return null;
+      }
+
+      function downloadItem(platform) {
+        return document.querySelector(`.download-item[data-asset="${platform}"]`);
+      }
+
+      function updateRecommendedBadge() {
+        document.querySelectorAll(".download-item").forEach((item) => {
+          item.classList.remove("is-recommended");
+          item.style.order = "";
+          item.querySelector(".badge")?.remove();
+        });
+        const item = recommendedPlatform ? downloadItem(recommendedPlatform) : null;
+        if (!item) return;
+        item.classList.add("is-recommended");
+        item.style.order = "-1";
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = translations[currentLanguage].recommended;
+        item.querySelector(".download-label").appendChild(badge);
+      }
+
+      function updatePrimaryDownload() {
+        const button = document.querySelector("#download-primary");
+        const item = recommendedPlatform ? downloadItem(recommendedPlatform) : null;
+        button.href = item && item.href !== fallbackReleaseUrl ? item.href : fallbackReleaseUrl;
+      }
+
       function setLanguage(language) {
         const selectedLanguage = translations[language] ? language : "en";
         const copy = translations[selectedLanguage];
+        currentLanguage = selectedLanguage;
         document.documentElement.lang = selectedLanguage;
         document.title = selectedLanguage === "zh-CN" ? "R2 List — Cloudflare R2 文件链接工作区" : `R2 List — ${copy.heroEyebrow}`;
         document.querySelector('meta[name="description"]').content = copy.heroIntro;
@@ -674,10 +728,42 @@
         });
         languageSelect.value = selectedLanguage;
         window.localStorage.setItem("r2-list-page-language", selectedLanguage);
+        updateRecommendedBadge();
+      }
+
+      async function loadLatestRelease() {
+        try {
+          const response = await fetch(`https://api.github.com/repos/${repository}/releases/latest`, {
+            headers: { Accept: "application/vnd.github+json" }
+          });
+          if (!response.ok) return;
+          const release = await response.json();
+          const assets = Array.isArray(release.assets) ? release.assets : [];
+          for (const [platform, matches] of Object.entries(assetMatchers)) {
+            const asset = assets.find((candidate) => matches(String(candidate.name).toLowerCase()));
+            const item = downloadItem(platform);
+            if (!asset || !item) continue;
+            item.href = asset.browser_download_url;
+            const code = item.querySelector("code");
+            if (code) code.textContent = asset.name;
+          }
+          if (release.tag_name) {
+            const tag = document.querySelector("#release-tag");
+            tag.textContent = release.tag_name;
+            tag.hidden = false;
+          }
+        } catch (error) {
+          // Offline or rate-limited: keep the links pointing at the releases page.
+        } finally {
+          updatePrimaryDownload();
+        }
       }
 
       languageSelect.addEventListener("change", (event) => setLanguage(event.currentTarget.value));
+      recommendedPlatform = detectPlatform();
       setLanguage(supportedLanguages.includes(savedLanguage) ? savedLanguage : browserLanguage);
+      updatePrimaryDownload();
+      loadLatestRelease();
     </script>
   </body>
 </html>
