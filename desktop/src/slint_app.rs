@@ -86,6 +86,30 @@ fn location_display_name(location: &DirectoryConfig) -> String {
         .unwrap_or_else(|| location.path.clone())
 }
 
+/// Finds the stored location that represents the same folder as `canonical_path`.
+///
+/// Windows compares paths case-insensitively, and a mapped network drive (`K:\`)
+/// canonicalizes to the UNC path the folder picker reports.
+fn local_location_index(directories: &[DirectoryConfig], canonical_path: &str) -> Option<usize> {
+    let key = super::local_path_key(canonical_path);
+    directories.iter().position(|directory| {
+        if directory.path.starts_with("webdav://") {
+            return false;
+        }
+        if super::local_path_key(&directory.path) == key {
+            return true;
+        }
+        directory
+            .path
+            .as_bytes()
+            .get(1)
+            .is_some_and(|byte| *byte == b':')
+            && fs::canonicalize(&directory.path)
+                .map(|path| super::local_path_key(&path.to_string_lossy()) == key)
+                .unwrap_or(false)
+    })
+}
+
 fn supported_system_locale(locale: &str) -> &'static str {
     let locale = locale.to_ascii_lowercase().replace('_', "-");
     if locale.starts_with("zh") {
@@ -164,34 +188,39 @@ fn system_uses_dark_theme() -> bool {
 
 impl AppState {
     fn open_directory(&mut self, path: &str) -> Result<(), String> {
-        let candidate = PathBuf::from(path.trim());
-        let root = fs::canonicalize(candidate).map_err(|error| error.to_string())?;
+        self.open_local_directory(path, true)
+    }
+
+    fn open_local_directory(&mut self, path: &str, register: bool) -> Result<(), String> {
+        let root = super::canonical_local_path(Path::new(path.trim()))?;
         if !root.is_dir() {
             return Err("The selected path is not a directory".into());
         }
         let entries = list_directory(&root, &root)?;
-        let path = root.to_string_lossy().into_owned();
+        let canonical_path = root.to_string_lossy().into_owned();
         let mut config = self.config.clone();
-        config.active_directory = Some(path.clone());
-        if !config
-            .directories
-            .iter()
-            .any(|directory| directory.path == path)
-        {
-            config.directories.push(DirectoryConfig {
-                path: path.clone(),
-                kind: "local".into(),
-                label: root
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned(),
-                endpoint: String::new(),
-                username: String::new(),
-                password: String::new(),
-                rules: UrlRulesConfig::default(),
-            });
-        }
+        let location_path =
+            if let Some(index) = local_location_index(&config.directories, &canonical_path) {
+                config.directories[index].path.clone()
+            } else if register {
+                config.directories.push(DirectoryConfig {
+                    path: canonical_path.clone(),
+                    kind: "local".into(),
+                    label: root
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned(),
+                    endpoint: String::new(),
+                    username: String::new(),
+                    password: String::new(),
+                    rules: UrlRulesConfig::default(),
+                });
+                canonical_path
+            } else {
+                canonical_path
+            };
+        config.active_directory = Some(location_path);
         if !self.config_load_failed {
             save_user_config(config.clone())?;
         }
@@ -270,7 +299,7 @@ impl AppState {
         if location.kind == "webdav" {
             self.connect_remote(&location.endpoint, &location.username, &location.password)
         } else {
-            self.open_directory(&location.path)
+            self.open_local_directory(&location.path, false)
         }
     }
 
@@ -682,6 +711,14 @@ impl AppState {
     }
 
     fn active_location(&self) -> String {
+        if let Some(path) = self
+            .config
+            .active_directory
+            .as_ref()
+            .filter(|path| !path.is_empty())
+        {
+            return path.clone();
+        }
         self.root
             .as_ref()
             .map(|root| root.to_string_lossy().into_owned())
@@ -1154,7 +1191,10 @@ fn rgba_to_slint_image(image: &image::RgbaImage) -> Image {
 
 fn decode_avif_rgba(bytes: &[u8]) -> Option<image::RgbaImage> {
     use avif_decode::Image as AvifImage;
-    let decoded = avif_decode::Decoder::from_avif(bytes).ok()?.to_image().ok()?;
+    let decoded = avif_decode::Decoder::from_avif(bytes)
+        .ok()?
+        .to_image()
+        .ok()?;
     let (width, height, data): (u32, u32, Vec<u8>) = match decoded {
         AvifImage::Rgba8(image) => {
             let mut data = Vec::with_capacity(image.width() * image.height() * 4);
@@ -1544,10 +1584,7 @@ fn update_window(window: &MainWindow, state: &AppState) {
                     "Selected “{name}” for moving. Choose a destination and paste.",
                 )
             } else {
-                translate(
-                    &locale,
-                    "Copied “{name}”. Choose a destination and paste.",
-                )
+                translate(&locale, "Copied “{name}”. Choose a destination and paste.")
             };
             template.replace("{name}", name)
         })
@@ -2525,9 +2562,7 @@ fn translate(locale: &str, english: &'static str) -> &'static str {
             "Select a file instead of a folder" => "Sélectionnez un fichier plutôt qu’un dossier",
             "Select a file first" => "Sélectionnez d’abord un fichier",
             "Select a file to preview" => "Sélectionnez un fichier à prévisualiser",
-            "Use Open externally for this file type" => {
-                "Utilisez Ouvrir pour ce type de fichier"
-            }
+            "Use Open externally for this file type" => "Utilisez Ouvrir pour ce type de fichier",
             "Save location" => "Enregistrer l’emplacement",
             "Connect WebDAV" => "Connecter WebDAV",
             "Create folder" => "Créer le dossier",
@@ -2606,16 +2641,15 @@ fn apply_locale(window: &MainWindow, locale: &str) {
     window.set_text_theme_dark(t("Dark").into());
     window.set_text_save(t("Save").into());
     window.set_text_settings_description(
-        t("Manage where configuration is stored, check for updates, and connect with GitHub.").into(),
+        t("Manage where configuration is stored, check for updates, and connect with GitHub.")
+            .into(),
     );
     window.set_text_configuration(t("CONFIGURATION").into());
     window.set_text_version(t("Version").into());
     window.set_text_latest_version(t("Latest version").into());
     window.set_text_config_folder(t("Configuration folder").into());
     window.set_text_config_file(t("Settings file").into());
-    window.set_text_config_hint(
-        t("R2 List saves its settings file in this folder.").into(),
-    );
+    window.set_text_config_hint(t("R2 List saves its settings file in this folder.").into());
     window.set_text_show_hidden(t("Show hidden and system files").into());
     window.set_text_choose_folder(t("Choose folder").into());
     window.set_text_reset(t("Use default").into());
@@ -2633,9 +2667,8 @@ fn apply_locale(window: &MainWindow, locale: &str) {
     window.set_text_object_prefix(t("Object prefix (optional)").into());
     window.set_text_bucket(t("Bucket (optional)").into());
     window.set_text_template(t("Template: {base}/{key}").into());
-    window.set_text_template_help(
-        t("Template placeholders: {base}, {key}, {path}, {bucket}").into(),
-    );
+    window
+        .set_text_template_help(t("Template placeholders: {base}, {key}, {path}, {bucket}").into());
     window.set_text_save_location(t("Save location").into());
     window.set_text_connect_webdav(t("Connect WebDAV").into());
     window.set_text_create_folder(t("Create folder").into());
@@ -2832,13 +2865,18 @@ fn confirm_delete(path: &Path) -> bool {
 
 pub fn run() {
     let window = MainWindow::new().expect("Could not create the Slint window");
-    let (config, config_load_failed) = match load_user_config() {
+    let (mut config, config_load_failed) = match load_user_config() {
         Ok(config) => (config, false),
         Err(error) => {
             window.set_status(format!("Could not load settings: {error}").into());
             (UserConfig::default(), true)
         }
     };
+    if !config_load_failed && super::migrate_local_locations(&mut config) {
+        if let Err(error) = save_user_config(config.clone()) {
+            window.set_status(format!("Could not save settings: {error}").into());
+        }
+    }
     let state = std::rc::Rc::new(std::cell::RefCell::new(AppState {
         config,
         config_load_failed,
@@ -3251,7 +3289,8 @@ pub fn run() {
                     }
                     Ok(PreviewResult::External) => {
                         window.set_preview_text(
-                            translate(&locale, "Opened with the system default application.").into(),
+                            translate(&locale, "Opened with the system default application.")
+                                .into(),
                         );
                         window.set_preview_image_visible(false);
                         let result = state.borrow_mut().open_selected();
@@ -3904,6 +3943,41 @@ mod tests {
         assert!(state.open_directory(file_path.to_str().unwrap()).is_err());
         assert_eq!(state.root.as_deref(), Some(directory.path()));
         assert_eq!(state.current, "subfolder");
+    }
+
+    #[test]
+    fn opening_a_folder_reuses_its_saved_location_instead_of_adding_one() {
+        let directory = tempfile::tempdir().unwrap();
+        let stored = fs::canonicalize(directory.path())
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let typed = directory.path().to_string_lossy().into_owned();
+        let mut state = AppState {
+            config: UserConfig {
+                directories: vec![DirectoryConfig {
+                    path: stored.clone(),
+                    kind: "local".into(),
+                    label: "media".into(),
+                    endpoint: String::new(),
+                    username: String::new(),
+                    password: String::new(),
+                    rules: UrlRulesConfig::default(),
+                }],
+                ..UserConfig::default()
+            },
+            config_load_failed: true,
+            ..AppState::default()
+        };
+
+        state.open_directory(&typed).unwrap();
+
+        assert_eq!(state.config.directories.len(), 1);
+        assert_eq!(
+            state.config.active_directory.as_deref(),
+            Some(stored.as_str())
+        );
+        assert_eq!(state.active_location(), stored);
     }
 
     #[test]

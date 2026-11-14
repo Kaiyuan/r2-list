@@ -442,28 +442,133 @@ async fn remote_listing(
     Ok(DirectoryListing { entries })
 }
 
+fn is_remote_location_path(path: &str) -> bool {
+    path.starts_with("webdav://")
+}
+
+/// Removes the Windows verbatim (`\\?\`) prefix from a path.
+///
+/// `fs::canonicalize` always returns a verbatim path on Windows, so a folder
+/// picked as `\\server\share` came back as `\\?\UNC\server\share`. Comparing or
+/// storing that form created a second location for an existing folder.
+fn local_path_text(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{rest}");
+        }
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            let bytes = rest.as_bytes();
+            if bytes.len() >= 3 && bytes[1] == b':' && matches!(bytes[2], b'\\' | b'/') {
+                return rest.to_string();
+            }
+        }
+    }
+    text.into_owned()
+}
+
+fn normalize_local_path(path: &Path) -> PathBuf {
+    let text = local_path_text(path);
+    if text == path.to_string_lossy() {
+        path.to_path_buf()
+    } else {
+        PathBuf::from(text)
+    }
+}
+
+fn canonical_local_path(path: &Path) -> Result<PathBuf, String> {
+    fs::canonicalize(path)
+        .map(|path| normalize_local_path(&path))
+        .map_err(|error| error.to_string())
+}
+
+fn local_path_key(path: &str) -> String {
+    let text = local_path_text(Path::new(path));
+    if cfg!(target_os = "windows") {
+        text.to_lowercase()
+    } else {
+        text
+    }
+}
+
+fn location_key(path: &str) -> String {
+    if is_remote_location_path(path) {
+        path.to_string()
+    } else {
+        local_path_key(path)
+    }
+}
+
+/// Normalizes stored local paths and drops the duplicates that earlier builds
+/// created by saving `fs::canonicalize` output as separate locations.
+fn migrate_local_locations(config: &mut UserConfig) -> bool {
+    let mut changed = false;
+    let mut kept = Vec::with_capacity(config.directories.len());
+    let mut keys: Vec<String> = Vec::new();
+    for mut directory in std::mem::take(&mut config.directories) {
+        if !is_remote_location_path(&directory.path) {
+            let normalized = local_path_text(Path::new(&directory.path));
+            if normalized != directory.path {
+                directory.path = normalized;
+                changed = true;
+            }
+        }
+        let key = location_key(&directory.path);
+        if keys.contains(&key) {
+            changed = true;
+            continue;
+        }
+        keys.push(key);
+        kept.push(directory);
+    }
+    config.directories = kept;
+    if let Some(active) = config.active_directory.clone() {
+        let normalized = if is_remote_location_path(&active) {
+            active.clone()
+        } else {
+            local_path_text(Path::new(&active))
+        };
+        let next = config
+            .directories
+            .iter()
+            .find(|directory| location_key(&directory.path) == location_key(&normalized))
+            .map(|directory| directory.path.clone())
+            .unwrap_or(normalized);
+        if next != active {
+            config.active_directory = Some(next);
+            changed = true;
+        }
+    }
+    changed
+}
+
 fn resolve_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
     let relative = Path::new(relative_path);
     if relative.is_absolute() {
         return Err("Absolute paths are not allowed".to_string());
     }
-    let path = fs::canonicalize(root.join(relative)).map_err(|error| error.to_string())?;
-    if !path.starts_with(root) {
+    let root = normalize_local_path(root);
+    let path = canonical_local_path(&root.join(relative))?;
+    if !path.starts_with(&root) {
         return Err("Path is outside the selected directory".to_string());
     }
     Ok(path)
 }
 
 fn list_directory(root: &Path, current: &Path) -> Result<Vec<DirectoryEntry>, String> {
+    let root = normalize_local_path(root);
     let mut entries = Vec::new();
     for item in fs::read_dir(current).map_err(|error| error.to_string())? {
         let item = item.map_err(|error| error.to_string())?;
-        let path = match fs::canonicalize(item.path()) {
-            Ok(path) if path.starts_with(root) => path,
+        let path = match canonical_local_path(&item.path()) {
+            Ok(path) if path.starts_with(&root) => path,
             _ => continue,
         };
         let metadata = item.metadata().map_err(|error| error.to_string())?;
-        let relative_path = path.strip_prefix(root).map_err(|error| error.to_string())?;
+        let relative_path = path
+            .strip_prefix(&root)
+            .map_err(|error| error.to_string())?;
         let name = item.file_name().to_string_lossy().into_owned();
         let extension = path
             .extension()
@@ -592,7 +697,7 @@ fn set_config_directory(directory: String) -> Result<ConfigLocation, String> {
 
     let path = PathBuf::from(directory);
     fs::create_dir_all(&path).map_err(|error| error.to_string())?;
-    let path = fs::canonicalize(&path).map_err(|error| error.to_string())?;
+    let path = canonical_local_path(&path)?;
     let target = path.join(CONFIG_FILE_NAME);
     if !target.exists() {
         let current = user_config_path()?;
@@ -734,8 +839,10 @@ fn copy_recursively(source: &Path, destination: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        WebDavClient, available_destination, file_kind, join_remote_path, list_directory,
-        remote_absolute_path, remote_child_path, resolve_path, suffixed_name,
+        DirectoryConfig, UrlRulesConfig, UserConfig, WebDavClient, available_destination,
+        file_kind, join_remote_path, list_directory, local_path_key, local_path_text,
+        migrate_local_locations, remote_absolute_path, remote_child_path, resolve_path,
+        suffixed_name,
     };
     use std::{
         fs,
@@ -986,6 +1093,81 @@ mod tests {
 
         assert_eq!(destination.file_name().unwrap(), "notes (2).txt");
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn local_location(path: &str, base_url: &str) -> DirectoryConfig {
+        DirectoryConfig {
+            path: path.into(),
+            kind: "local".into(),
+            label: "media".into(),
+            endpoint: String::new(),
+            username: String::new(),
+            password: String::new(),
+            rules: UrlRulesConfig {
+                base_url: base_url.into(),
+                prefix: String::new(),
+                bucket: None,
+                template: None,
+            },
+        }
+    }
+
+    #[test]
+    fn migration_merges_duplicate_locations_and_keeps_the_first_rules() {
+        let mut config = UserConfig {
+            directories: vec![
+                local_location(r"\\nas\share\media", "https://cdn.example.test"),
+                local_location(r"\\nas\share\media", "https://other.example.test"),
+            ],
+            active_directory: Some(r"\\nas\share\media".into()),
+            ..UserConfig::default()
+        };
+
+        assert!(migrate_local_locations(&mut config));
+        assert_eq!(config.directories.len(), 1);
+        assert_eq!(
+            config.directories[0].rules.base_url,
+            "https://cdn.example.test"
+        );
+        assert!(!migrate_local_locations(&mut config));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn migration_merges_verbatim_duplicates_created_by_canonicalize() {
+        let mut config = UserConfig {
+            directories: vec![
+                local_location(r"\\nas\share\media", "https://cdn.example.test"),
+                local_location(r"\\?\UNC\nas\share\media", "https://cdn.studio-example.com"),
+            ],
+            active_directory: Some(r"\\?\UNC\nas\share\media".into()),
+            ..UserConfig::default()
+        };
+
+        assert!(migrate_local_locations(&mut config));
+        assert_eq!(config.directories.len(), 1);
+        assert_eq!(config.directories[0].path, r"\\nas\share\media");
+        assert_eq!(
+            config.active_directory.as_deref(),
+            Some(r"\\nas\share\media")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn strips_windows_verbatim_path_prefixes() {
+        assert_eq!(
+            local_path_text(std::path::Path::new(r"\\?\UNC\nas\share\media")),
+            r"\\nas\share\media"
+        );
+        assert_eq!(
+            local_path_text(std::path::Path::new(r"\\?\C:\Users\example")),
+            r"C:\Users\example"
+        );
+        assert_eq!(
+            local_path_key(r"\\?\UNC\NAS\Share"),
+            local_path_key(r"\\nas\share")
+        );
     }
 
     #[tokio::test]
